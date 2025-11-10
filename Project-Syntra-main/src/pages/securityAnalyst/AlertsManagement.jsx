@@ -1,5 +1,5 @@
 // src/pages/securityAnalyst/AlertsManagement.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Badge, Box, Button, Flex, HStack, IconButton, Input,
   Modal, ModalBody, ModalCloseButton, ModalContent, ModalFooter,
@@ -37,6 +37,7 @@ export default function AlertsManagement() {
   const [suricataAlerts, setSuricataAlerts] = useState([]);
   const [zeekLogs, setZeekLogs] = useState([]);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [fetchLimit, setFetchLimit] = useState(50); // Performance: Default to 50 records per source
 
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState("");
@@ -80,13 +81,13 @@ export default function AlertsManagement() {
   const border = useColorModeValue("gray.200", "whiteAlpha.200");
   const headerBg = useColorModeValue("gray.50", "navy.900");
 
-  const fetchAlerts = async () => {
+  const fetchAlerts = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
       setLoading(true);
       const [suricata, zeek] = await Promise.all([
-        getSuricataAlerts(200).catch(() => []),
-        getZeekLogs(200).catch(() => []),
+        getSuricataAlerts(fetchLimit).catch(() => []),
+        getZeekLogs(fetchLimit).catch(() => []),
       ]);
 
       // Enrich Suricata alerts with local state
@@ -132,25 +133,28 @@ export default function AlertsManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated, fetchLimit, toast]);
 
   useEffect(() => {
     fetchAlerts();
-    const interval = setInterval(fetchAlerts, 30000);
+    const interval = setInterval(fetchAlerts, 60000); // Performance: Increased from 30s to 60s
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [fetchAlerts]);
 
-  // Combine all alerts
-  const allAlerts = [...suricataAlerts, ...zeekLogs]
-    .filter(a => !a.archived)
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  // Combine all alerts - memoized for performance
+  const allAlerts = useMemo(() =>
+    [...suricataAlerts, ...zeekLogs]
+      .filter(a => !a.archived)
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+  , [suricataAlerts, zeekLogs]);
 
-  // Get unique alert signatures for filter dropdown
-  const uniqueSignatures = [...new Set(allAlerts.map(a => a.signature))].sort();
+  // Get unique alert signatures for filter dropdown - memoized
+  const uniqueSignatures = useMemo(() =>
+    [...new Set(allAlerts.map(a => a.signature))].sort()
+  , [allAlerts]);
 
-  // Apply filters
-  const filterAlerts = (alerts) => {
+  // Apply filters - memoized for performance
+  const filterAlerts = useCallback((alerts) => {
     let result = alerts.filter(a => !a.archived);
 
     // Search filter
@@ -189,11 +193,17 @@ export default function AlertsManagement() {
     }
 
     return result;
-  };
+  }, [searchTerm, alertNameFilter, severityFilter, statusFilter]);
 
-  const filteredAllAlerts = filterAlerts(allAlerts);
-  const filteredSuricataAlerts = filterAlerts(suricataAlerts.filter(a => !a.archived));
-  const filteredZeekLogs = filterAlerts(zeekLogs.filter(a => !a.archived));
+  const filteredAllAlerts = useMemo(() => filterAlerts(allAlerts), [filterAlerts, allAlerts]);
+  const filteredSuricataAlerts = useMemo(() =>
+    filterAlerts(suricataAlerts.filter(a => !a.archived)),
+    [filterAlerts, suricataAlerts]
+  );
+  const filteredZeekLogs = useMemo(() =>
+    filterAlerts(zeekLogs.filter(a => !a.archived)),
+    [filterAlerts, zeekLogs]
+  );
 
   // View Alert Details
   const handleViewAlert = (alert) => {
@@ -413,7 +423,20 @@ export default function AlertsManagement() {
           Alerts Management
         </Text>
         <HStack ms="auto" spacing={2}>
-          <Text fontSize="xs" color="gray.500">
+          <FormControl width="auto" minW="120px">
+            <Select
+              size="sm"
+              value={fetchLimit}
+              onChange={(e) => setFetchLimit(Number(e.target.value))}
+              bg={cardBg}
+            >
+              <option value={20}>Load 20</option>
+              <option value={50}>Load 50</option>
+              <option value={100}>Load 100</option>
+              <option value={200}>Load 200</option>
+            </Select>
+          </FormControl>
+          <Text fontSize="xs" color="gray.500" whiteSpace="nowrap">
             Last updated: {lastRefresh.toLocaleTimeString()}
           </Text>
           <IconButton

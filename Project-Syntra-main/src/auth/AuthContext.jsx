@@ -19,6 +19,17 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [accessToken, setAccessToken] = useState(() => {
+    // DEVELOPMENT MODE: Always start logged out when running npm start
+    if (process.env.NODE_ENV === 'development') {
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user");
+      localStorage.removeItem("syntra_token");
+      localStorage.removeItem("syntra_user");
+      console.log("Development mode: Cleared authentication data");
+      return null;
+    }
+
+    // Normal behavior for production
     const token = localStorage.getItem("accessToken");
     // Clear if expired
     if (token && isTokenExpired(token)) {
@@ -30,6 +41,12 @@ export function AuthProvider({ children }) {
   });
 
   const [user, setUser] = useState(() => {
+    // Skip loading user in development mode
+    if (process.env.NODE_ENV === 'development') {
+      return null;
+    }
+
+    // Normal behavior for production
     const token = localStorage.getItem("accessToken");
     // Only load user if token is valid
     if (token && !isTokenExpired(token)) {

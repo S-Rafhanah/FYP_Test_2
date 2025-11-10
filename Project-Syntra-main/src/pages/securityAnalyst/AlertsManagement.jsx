@@ -63,6 +63,19 @@ export default function AlertsManagement() {
     reason: "",
   });
 
+  // Add this helper function to properly reset update modal
+  const resetUpdateModal = () => {
+    setUpdateModal({
+      isOpen: false,
+      alert: null,
+      classification: "",
+      status: "",
+      tags: [],
+      triageLevel: "",
+      notes: "",
+    });
+  };
+
   const cardBg = useColorModeValue("white", "navy.800");
   const border = useColorModeValue("gray.200", "whiteAlpha.200");
   const headerBg = useColorModeValue("gray.50", "navy.900");
@@ -227,7 +240,7 @@ export default function AlertsManagement() {
       status: "success",
       duration: 2000,
     });
-    setUpdateModal({ isOpen: false, alert: null });
+    resetUpdateModal();
   };
 
   // Archive Alert
@@ -688,7 +701,7 @@ export default function AlertsManagement() {
       {/* Update Alert Modal */}
       <Modal
         isOpen={updateModal.isOpen}
-        onClose={() => setUpdateModal({ isOpen: false, alert: null })}
+        onClose={resetUpdateModal}
         size="lg"
       >
         <ModalOverlay />
@@ -778,7 +791,7 @@ export default function AlertsManagement() {
             <Button
               variant="ghost"
               mr={3}
-              onClick={() => setUpdateModal({ isOpen: false, alert: null })}
+              onClick={resetUpdateModal}
             >
               Cancel
             </Button>

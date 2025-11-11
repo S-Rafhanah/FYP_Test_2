@@ -20,6 +20,32 @@ import { useAuth } from "../../auth/AuthContext";
 // Stores analyst annotations (classification, status, tags, etc.) separately from raw logs
 const ALERT_METADATA_KEY = "alert_metadata";
 
+// Generate stable ID from alert properties (not index-based)
+const generateStableAlertId = (alert, source) => {
+  // Use _id if available from backend
+  if (alert._id) return alert._id;
+
+  // Otherwise create stable ID from alert properties that don't change
+  if (source === "Suricata") {
+    // Use timestamp + signature + src_ip + dest_ip for Suricata
+    const signature = alert.alert?.signature || alert.signature || "unknown";
+    const srcIp = alert.src_ip || "unknown";
+    const destIp = alert.dest_ip || "unknown";
+    const timestamp = alert.timestamp || Date.now();
+    // Create simple hash
+    const str = `suricata-${timestamp}-${srcIp}-${destIp}-${signature}`;
+    return str.replace(/[^a-zA-Z0-9-_.]/g, '_').substring(0, 100);
+  } else {
+    // Use uid or timestamp + IPs for Zeek
+    if (alert.uid) return `zeek-${alert.uid}`;
+    const origH = alert["id.orig_h"] || "unknown";
+    const respH = alert["id.resp_h"] || "unknown";
+    const timestamp = alert.ts || alert.timestamp || Date.now();
+    const str = `zeek-${timestamp}-${origH}-${respH}`;
+    return str.replace(/[^a-zA-Z0-9-_.]/g, '_').substring(0, 100);
+  }
+};
+
 const getAlertMetadata = (alertId) => {
   try {
     const metadata = localStorage.getItem(ALERT_METADATA_KEY);
@@ -41,6 +67,7 @@ const saveAlertMetadata = (alertId, metadata) => {
       updatedAt: new Date().toISOString(),
     };
     localStorage.setItem(ALERT_METADATA_KEY, JSON.stringify(allMetadata));
+    console.log(`✅ Saved metadata for alert ID: ${alertId}`);
   } catch (error) {
     console.error("Error saving alert metadata:", error);
   }
@@ -135,9 +162,13 @@ export default function AlertsManagement() {
       const allMetadata = getAllAlertMetadata();
 
       // Enrich Suricata alerts with local state AND persisted metadata
-      const enrichedSuricata = (suricata || []).map((alert, idx) => {
-        const id = alert._id || `suricata-${idx}`;
+      const enrichedSuricata = (suricata || []).map((alert) => {
+        const id = generateStableAlertId(alert, "Suricata");
         const savedMetadata = allMetadata[id];
+
+        if (savedMetadata) {
+          console.log(`📋 Loading saved metadata for Suricata alert: ${id.substring(0, 50)}...`);
+        }
 
         return {
           ...alert,
@@ -156,9 +187,13 @@ export default function AlertsManagement() {
       });
 
       // Enrich Zeek logs with local state AND persisted metadata
-      const enrichedZeek = (zeek || []).map((log, idx) => {
-        const id = log._id || `zeek-${idx}`;
+      const enrichedZeek = (zeek || []).map((log) => {
+        const id = generateStableAlertId(log, "Zeek");
         const savedMetadata = allMetadata[id];
+
+        if (savedMetadata) {
+          console.log(`📋 Loading saved metadata for Zeek log: ${id.substring(0, 50)}...`);
+        }
 
         return {
           ...log,
@@ -543,7 +578,8 @@ export default function AlertsManagement() {
         <AlertDescription>
           <strong>Consolidated Alert System:</strong> Raw IDS/Network logs remain unchanged.
           Your classifications, status updates, and notes are stored separately and persist across page refreshes.
-          This allows you to annotate alerts without modifying the original detection data.
+          Each alert is uniquely identified by its content (timestamp, IPs, signature), ensuring your annotations
+          always match the correct alert even as new data arrives.
         </AlertDescription>
       </Alert>
 

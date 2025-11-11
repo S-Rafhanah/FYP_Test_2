@@ -212,7 +212,8 @@ export default function AlertsManagement() {
           id,
           source: "Suricata",
           signature: alert.alert?.signature || alert.signature || "Unknown",
-          severity: alert.alert?.severity || alert.severity || 3,
+          // Use saved severity if analyst has triaged, otherwise use raw IDS severity
+          severity: savedMetadata?.severity || alert.alert?.severity || alert.severity || 3,
           // Use saved metadata if available, otherwise use defaults
           classification: savedMetadata?.classification || alert.classification || "Unclassified",
           status: savedMetadata?.status || alert.status || "New",
@@ -238,7 +239,8 @@ export default function AlertsManagement() {
           id,
           source: "Zeek",
           signature: log.service || log.proto || "Network Activity",
-          severity: 3, // Default to low severity for logs
+          // Use saved severity if analyst has triaged, otherwise default to low for logs
+          severity: savedMetadata?.severity || 3,
           // Use saved metadata if available, otherwise use defaults
           classification: savedMetadata?.classification || log.classification || "Network Log",
           status: savedMetadata?.status || log.status || "New",
@@ -354,6 +356,9 @@ export default function AlertsManagement() {
 
   // Update Alert - now persists to localStorage
   const handleUpdateAlert = () => {
+    // Map triage level to severity
+    const updatedSeverity = triageLevelToSeverity(updateModal.triageLevel);
+
     // Save metadata to localStorage (persists across refreshes)
     saveAlertMetadata(updateModal.alert.id, {
       classification: updateModal.classification,
@@ -361,6 +366,7 @@ export default function AlertsManagement() {
       tags: updateModal.tags,
       triageLevel: updateModal.triageLevel,
       notes: updateModal.notes,
+      severity: updatedSeverity, // Save severity based on triage level
       archived: false,
     });
 
@@ -375,6 +381,7 @@ export default function AlertsManagement() {
               tags: updateModal.tags,
               triageLevel: updateModal.triageLevel,
               notes: updateModal.notes,
+              severity: updatedSeverity, // Update severity in UI
             }
           : a
       );
@@ -387,7 +394,7 @@ export default function AlertsManagement() {
 
     toast({
       title: "Alert updated and saved successfully",
-      description: "Changes will persist across page refreshes",
+      description: "Severity and triage level updated. Changes will persist across page refreshes",
       status: "success",
       duration: 3000,
     });
@@ -463,6 +470,17 @@ export default function AlertsManagement() {
     if (severity === 2 || severity === "high") return "MEDIUM";
     if (severity === 3 || severity === "medium") return "LOW";
     return "INFO";
+  };
+
+  // Map triage level to severity value for display
+  const triageLevelToSeverity = (triageLevel) => {
+    const mapping = {
+      "Critical": 1,
+      "High": 1,
+      "Medium": 2,
+      "Low": 3,
+    };
+    return mapping[triageLevel] || 3;
   };
 
   // Render alerts table
@@ -634,11 +652,10 @@ export default function AlertsManagement() {
           <AlertDescription>
             <strong>Consolidated Alert System:</strong> Raw IDS/Network logs remain unchanged.
             Your classifications, status updates, and notes are stored separately and persist across page refreshes.
-            Each alert is uniquely identified by a hash of its properties (timestamp, IPs, ports, signature).
+            When you update the <strong>Triage Level</strong>, the <strong>Severity</strong> column automatically updates to match your analyst assessment.
           </AlertDescription>
           <Text fontSize="xs" mt={2} opacity={0.8}>
-            <strong>Note:</strong> Duplicate alerts (identical data) are auto-numbered to prevent display errors.
-            Only the first occurrence of duplicate alerts can have persistent metadata.
+            <strong>Triage → Severity Mapping:</strong> Critical/High → HIGH, Medium → MEDIUM, Low → LOW
           </Text>
         </Box>
       </Alert>

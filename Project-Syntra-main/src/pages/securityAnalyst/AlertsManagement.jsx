@@ -427,8 +427,7 @@ export default function AlertsManagement() {
     // Map triage level to severity
     const updatedSeverity = triageLevelToSeverity(updateModal.triageLevel);
 
-    // Save metadata to localStorage (persists across refreshes)
-    saveAlertMetadata(updateModal.alert.id, {
+    const metadata = {
       classification: updateModal.classification,
       status: updateModal.status,
       tags: updateModal.tags,
@@ -436,7 +435,18 @@ export default function AlertsManagement() {
       notes: updateModal.notes,
       severity: updatedSeverity, // Save severity based on triage level
       archived: false,
-    });
+    };
+
+    // If this is a consolidated alert, save metadata for ALL alerts in the group
+    if (updateModal.alert.consolidatedIds && updateModal.alert.consolidatedIds.length > 0) {
+      updateModal.alert.consolidatedIds.forEach(alertId => {
+        saveAlertMetadata(alertId, metadata);
+      });
+      console.log(`✅ Saved metadata for ${updateModal.alert.consolidatedIds.length} consolidated alerts`);
+    } else {
+      // Single alert - save metadata normally
+      saveAlertMetadata(updateModal.alert.id, metadata);
+    }
 
     // Also update React state for immediate UI feedback
     const updateAlertInList = (alerts) =>
@@ -462,7 +472,9 @@ export default function AlertsManagement() {
 
     toast({
       title: "Alert updated and saved successfully",
-      description: "Severity and triage level updated. Changes will persist across page refreshes",
+      description: updateModal.alert.count > 1
+        ? `Updated ${updateModal.alert.count} consolidated alerts. Changes will persist.`
+        : "Changes will persist across page refreshes",
       status: "success",
       duration: 3000,
     });
@@ -480,16 +492,28 @@ export default function AlertsManagement() {
       return;
     }
 
-    // Get existing metadata to preserve other fields
-    const existingMetadata = getAlertMetadata(archiveModal.alert.id);
-
-    // Save archive status to localStorage
-    saveAlertMetadata(archiveModal.alert.id, {
-      ...(existingMetadata || {}),
-      archived: true,
-      archiveReason: archiveModal.reason,
-      archivedAt: new Date().toISOString(),
-    });
+    // If this is a consolidated alert, archive ALL alerts in the group
+    if (archiveModal.alert.consolidatedIds && archiveModal.alert.consolidatedIds.length > 0) {
+      archiveModal.alert.consolidatedIds.forEach(alertId => {
+        const existingMetadata = getAlertMetadata(alertId);
+        saveAlertMetadata(alertId, {
+          ...(existingMetadata || {}),
+          archived: true,
+          archiveReason: archiveModal.reason,
+          archivedAt: new Date().toISOString(),
+        });
+      });
+      console.log(`✅ Archived ${archiveModal.alert.consolidatedIds.length} consolidated alerts`);
+    } else {
+      // Single alert
+      const existingMetadata = getAlertMetadata(archiveModal.alert.id);
+      saveAlertMetadata(archiveModal.alert.id, {
+        ...(existingMetadata || {}),
+        archived: true,
+        archiveReason: archiveModal.reason,
+        archivedAt: new Date().toISOString(),
+      });
+    }
 
     // Also update React state for immediate UI feedback
     const archiveInList = (alerts) =>
@@ -507,7 +531,9 @@ export default function AlertsManagement() {
 
     toast({
       title: "Alert archived and saved successfully",
-      description: "Archive status will persist across page refreshes",
+      description: archiveModal.alert.count > 1
+        ? `Archived ${archiveModal.alert.count} consolidated alerts.`
+        : "Archive status will persist across page refreshes",
       status: "success",
       duration: 3000,
     });

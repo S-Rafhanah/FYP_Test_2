@@ -7,6 +7,7 @@ import {
   Textarea, Th, Thead, Tr, useColorModeValue, useToast, VStack,
   Icon, InputGroup, InputLeftElement, Tag, TagLabel, TagCloseButton,
   FormControl, FormLabel, Collapse, Tabs, TabList, Tab, TabPanels, TabPanel,
+  Alert, AlertIcon, AlertDescription,
 } from "@chakra-ui/react";
 import {
   FiRefreshCw, FiSearch, FiEdit, FiArchive, FiEye,
@@ -14,6 +15,46 @@ import {
 } from "react-icons/fi";
 import { getSuricataAlerts, getZeekLogs } from "../../backend_api";
 import { useAuth } from "../../auth/AuthContext";
+
+// Alert Metadata Persistence Helper
+// Stores analyst annotations (classification, status, tags, etc.) separately from raw logs
+const ALERT_METADATA_KEY = "alert_metadata";
+
+const getAlertMetadata = (alertId) => {
+  try {
+    const metadata = localStorage.getItem(ALERT_METADATA_KEY);
+    if (!metadata) return null;
+    const allMetadata = JSON.parse(metadata);
+    return allMetadata[alertId] || null;
+  } catch (error) {
+    console.error("Error reading alert metadata:", error);
+    return null;
+  }
+};
+
+const saveAlertMetadata = (alertId, metadata) => {
+  try {
+    const existing = localStorage.getItem(ALERT_METADATA_KEY);
+    const allMetadata = existing ? JSON.parse(existing) : {};
+    allMetadata[alertId] = {
+      ...metadata,
+      updatedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(ALERT_METADATA_KEY, JSON.stringify(allMetadata));
+  } catch (error) {
+    console.error("Error saving alert metadata:", error);
+  }
+};
+
+const getAllAlertMetadata = () => {
+  try {
+    const metadata = localStorage.getItem(ALERT_METADATA_KEY);
+    return metadata ? JSON.parse(metadata) : {};
+  } catch (error) {
+    console.error("Error reading all alert metadata:", error);
+    return {};
+  }
+};
 
 // Alert severity badge helper
 const getSeverityBadge = (severity) => {
@@ -90,35 +131,50 @@ export default function AlertsManagement() {
         getZeekLogs(fetchLimit).catch(() => []),
       ]);
 
-      // Enrich Suricata alerts with local state
-      const enrichedSuricata = (suricata || []).map((alert, idx) => ({
-        ...alert,
-        id: alert._id || `suricata-${idx}`,
-        source: "Suricata",
-        signature: alert.alert?.signature || alert.signature || "Unknown",
-        severity: alert.alert?.severity || alert.severity || 3,
-        classification: alert.classification || "Unclassified",
-        status: alert.status || "New",
-        tags: alert.tags || [],
-        triageLevel: alert.triageLevel || "Medium",
-        notes: alert.notes || "",
-        archived: alert.archived || false,
-      }));
+      // Get all saved metadata
+      const allMetadata = getAllAlertMetadata();
 
-      // Enrich Zeek logs with local state
-      const enrichedZeek = (zeek || []).map((log, idx) => ({
-        ...log,
-        id: log._id || `zeek-${idx}`,
-        source: "Zeek",
-        signature: log.service || log.proto || "Network Activity",
-        severity: 3, // Default to low severity for logs
-        classification: log.classification || "Network Log",
-        status: log.status || "New",
-        tags: log.tags || [],
-        triageLevel: log.triageLevel || "Low",
-        notes: log.notes || "",
-        archived: log.archived || false,
-      }));
+      // Enrich Suricata alerts with local state AND persisted metadata
+      const enrichedSuricata = (suricata || []).map((alert, idx) => {
+        const id = alert._id || `suricata-${idx}`;
+        const savedMetadata = allMetadata[id];
+
+        return {
+          ...alert,
+          id,
+          source: "Suricata",
+          signature: alert.alert?.signature || alert.signature || "Unknown",
+          severity: alert.alert?.severity || alert.severity || 3,
+          // Use saved metadata if available, otherwise use defaults
+          classification: savedMetadata?.classification || alert.classification || "Unclassified",
+          status: savedMetadata?.status || alert.status || "New",
+          tags: savedMetadata?.tags || alert.tags || [],
+          triageLevel: savedMetadata?.triageLevel || alert.triageLevel || "Medium",
+          notes: savedMetadata?.notes || alert.notes || "",
+          archived: savedMetadata?.archived || alert.archived || false,
+        };
+      });
+
+      // Enrich Zeek logs with local state AND persisted metadata
+      const enrichedZeek = (zeek || []).map((log, idx) => {
+        const id = log._id || `zeek-${idx}`;
+        const savedMetadata = allMetadata[id];
+
+        return {
+          ...log,
+          id,
+          source: "Zeek",
+          signature: log.service || log.proto || "Network Activity",
+          severity: 3, // Default to low severity for logs
+          // Use saved metadata if available, otherwise use defaults
+          classification: savedMetadata?.classification || log.classification || "Network Log",
+          status: savedMetadata?.status || log.status || "New",
+          tags: savedMetadata?.tags || log.tags || [],
+          triageLevel: savedMetadata?.triageLevel || log.triageLevel || "Low",
+          notes: savedMetadata?.notes || log.notes || "",
+          archived: savedMetadata?.archived || log.archived || false,
+        };
+      });
 
       setSuricataAlerts(enrichedSuricata);
       setZeekLogs(enrichedZeek);
@@ -223,8 +279,19 @@ export default function AlertsManagement() {
     });
   };
 
-  // Update Alert
+  // Update Alert - now persists to localStorage
   const handleUpdateAlert = () => {
+    // Save metadata to localStorage (persists across refreshes)
+    saveAlertMetadata(updateModal.alert.id, {
+      classification: updateModal.classification,
+      status: updateModal.status,
+      tags: updateModal.tags,
+      triageLevel: updateModal.triageLevel,
+      notes: updateModal.notes,
+      archived: false,
+    });
+
+    // Also update React state for immediate UI feedback
     const updateAlertInList = (alerts) =>
       alerts.map((a) =>
         a.id === updateModal.alert.id
@@ -246,14 +313,15 @@ export default function AlertsManagement() {
     }
 
     toast({
-      title: "Alert updated successfully",
+      title: "Alert updated and saved successfully",
+      description: "Changes will persist across page refreshes",
       status: "success",
-      duration: 2000,
+      duration: 3000,
     });
     resetUpdateModal();
   };
 
-  // Archive Alert
+  // Archive Alert - now persists to localStorage
   const handleArchiveAlert = () => {
     if (!archiveModal.reason.trim()) {
       toast({
@@ -264,6 +332,18 @@ export default function AlertsManagement() {
       return;
     }
 
+    // Get existing metadata to preserve other fields
+    const existingMetadata = getAlertMetadata(archiveModal.alert.id);
+
+    // Save archive status to localStorage
+    saveAlertMetadata(archiveModal.alert.id, {
+      ...(existingMetadata || {}),
+      archived: true,
+      archiveReason: archiveModal.reason,
+      archivedAt: new Date().toISOString(),
+    });
+
+    // Also update React state for immediate UI feedback
     const archiveInList = (alerts) =>
       alerts.map((a) =>
         a.id === archiveModal.alert.id
@@ -278,9 +358,10 @@ export default function AlertsManagement() {
     }
 
     toast({
-      title: "Alert archived successfully",
+      title: "Alert archived and saved successfully",
+      description: "Archive status will persist across page refreshes",
       status: "success",
-      duration: 2000,
+      duration: 3000,
     });
     setArchiveModal({ isOpen: false, alert: null, reason: "" });
   };
@@ -418,7 +499,7 @@ export default function AlertsManagement() {
   return (
     <Box>
       {/* Header */}
-      <Flex gap={3} align="center" mb={6}>
+      <Flex gap={3} align="center" mb={4}>
         <Text fontSize="2xl" fontWeight="bold">
           Alerts Management
         </Text>
@@ -455,6 +536,16 @@ export default function AlertsManagement() {
           />
         </HStack>
       </Flex>
+
+      {/* Consolidated Alerts Info */}
+      <Alert status="info" borderRadius="md" mb={4} fontSize="sm">
+        <AlertIcon />
+        <AlertDescription>
+          <strong>Consolidated Alert System:</strong> Raw IDS/Network logs remain unchanged.
+          Your classifications, status updates, and notes are stored separately and persist across page refreshes.
+          This allows you to annotate alerts without modifying the original detection data.
+        </AlertDescription>
+      </Alert>
 
       {/* Search Bar */}
       <Box mb={4}>

@@ -496,7 +496,6 @@ export default function AlertsManagement() {
           <Th>Severity</Th>
           <Th>Status</Th>
           <Th>Classification</Th>
-          <Th>Triage Level</Th>
           <Th>Actions</Th>
         </Tr>
       </Thead>
@@ -550,22 +549,6 @@ export default function AlertsManagement() {
               </Td>
               <Td fontSize="sm">{alert.classification}</Td>
               <Td>
-                <Badge
-                  colorScheme={
-                    alert.triageLevel === "Critical"
-                      ? "red"
-                      : alert.triageLevel === "High"
-                      ? "orange"
-                      : alert.triageLevel === "Medium"
-                      ? "yellow"
-                      : "blue"
-                  }
-                  fontSize="xs"
-                >
-                  {alert.triageLevel}
-                </Badge>
-              </Td>
-              <Td>
                 <HStack spacing={1}>
                   <IconButton
                     aria-label="View details"
@@ -595,7 +578,7 @@ export default function AlertsManagement() {
           ))
         ) : (
           <Tr>
-            <Td colSpan={showSource ? 10 : 9} textAlign="center" py={8} color="gray.500">
+            <Td colSpan={showSource ? 9 : 8} textAlign="center" py={8} color="gray.500">
               No alerts found
             </Td>
           </Tr>
@@ -650,12 +633,12 @@ export default function AlertsManagement() {
         <AlertIcon />
         <Box>
           <AlertDescription>
-            <strong>Consolidated Alert System:</strong> Raw IDS/Network logs remain unchanged.
-            Your classifications, status updates, and notes are stored separately and persist across page refreshes.
-            When you update the <strong>Triage Level</strong>, the <strong>Severity</strong> column automatically updates to match your analyst assessment.
+            <strong>Alert Annotation System:</strong> Raw IDS/Network logs remain unchanged.
+            Your classifications, status updates, severity assessments, and notes are stored separately and persist across page refreshes.
+            Use the Edit button to update alert severity, classification, and status based on your analysis.
           </AlertDescription>
           <Text fontSize="xs" mt={2} opacity={0.8}>
-            <strong>Triage → Severity Mapping:</strong> Critical/High → HIGH, Medium → MEDIUM, Low → LOW
+            <strong>Note:</strong> Each raw log is displayed separately. Alert consolidation (grouping similar alerts) coming soon!
           </Text>
         </Box>
       </Alert>

@@ -20,6 +20,17 @@ import { useAuth } from "../../auth/AuthContext";
 // Stores analyst annotations (classification, status, tags, etc.) separately from raw logs
 const ALERT_METADATA_KEY = "alert_metadata";
 
+// Simple hash function to create unique identifiers
+const simpleHash = (str) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+};
+
 // Generate stable ID from alert properties (not index-based)
 const generateStableAlertId = (alert, source) => {
   // Use _id if available from backend
@@ -31,18 +42,30 @@ const generateStableAlertId = (alert, source) => {
     const signature = alert.alert?.signature || alert.signature || "unknown";
     const srcIp = alert.src_ip || "unknown";
     const destIp = alert.dest_ip || "unknown";
+    const srcPort = alert.src_port || "0";
+    const destPort = alert.dest_port || "0";
     const timestamp = alert.timestamp || Date.now();
-    // Create simple hash
-    const str = `suricata-${timestamp}-${srcIp}-${destIp}-${signature}`;
-    return str.replace(/[^a-zA-Z0-9-_.]/g, '_').substring(0, 100);
+
+    // Create comprehensive string for hashing
+    const str = `${timestamp}-${srcIp}-${srcPort}-${destIp}-${destPort}-${signature}`;
+    const hash = simpleHash(str);
+    return `suricata-${hash}-${timestamp}`.substring(0, 100);
   } else {
-    // Use uid or timestamp + IPs for Zeek
+    // Use uid or create from multiple fields for Zeek
     if (alert.uid) return `zeek-${alert.uid}`;
+
     const origH = alert["id.orig_h"] || "unknown";
     const respH = alert["id.resp_h"] || "unknown";
+    const origP = alert["id.orig_p"] || "0";
+    const respP = alert["id.resp_p"] || "0";
+    const service = alert.service || "";
+    const proto = alert.proto || "";
     const timestamp = alert.ts || alert.timestamp || Date.now();
-    const str = `zeek-${timestamp}-${origH}-${respH}`;
-    return str.replace(/[^a-zA-Z0-9-_.]/g, '_').substring(0, 100);
+
+    // Create comprehensive string for hashing
+    const str = `${timestamp}-${origH}-${origP}-${respH}-${respP}-${service}-${proto}`;
+    const hash = simpleHash(str);
+    return `zeek-${hash}-${timestamp}`.substring(0, 100);
   }
 };
 
@@ -575,12 +598,19 @@ export default function AlertsManagement() {
       {/* Consolidated Alerts Info */}
       <Alert status="info" borderRadius="md" mb={4} fontSize="sm">
         <AlertIcon />
-        <AlertDescription>
-          <strong>Consolidated Alert System:</strong> Raw IDS/Network logs remain unchanged.
-          Your classifications, status updates, and notes are stored separately and persist across page refreshes.
-          Each alert is uniquely identified by its content (timestamp, IPs, signature), ensuring your annotations
-          always match the correct alert even as new data arrives.
-        </AlertDescription>
+        <Box>
+          <AlertDescription>
+            <strong>Consolidated Alert System:</strong> Raw IDS/Network logs remain unchanged.
+            Your classifications, status updates, and notes are stored separately and persist across page refreshes.
+            Each alert is uniquely identified by a hash of its properties (timestamp, IPs, ports, signature).
+          </AlertDescription>
+          <Text fontSize="xs" mt={2} opacity={0.8}>
+            <strong>Note:</strong> If you see duplicate alerts or missing updates, open browser console (F12) and run:{" "}
+            <code style={{background: 'rgba(0,0,0,0.1)', padding: '2px 4px', borderRadius: '3px'}}>
+              localStorage.removeItem('alert_metadata')
+            </code>
+          </Text>
+        </Box>
       </Alert>
 
       {/* Search Bar */}

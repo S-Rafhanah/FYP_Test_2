@@ -478,6 +478,7 @@ export default function AlertsManagement() {
           <Th>Severity</Th>
           <Th>Status</Th>
           <Th>Classification</Th>
+          <Th>Triage Level</Th>
           <Th>Actions</Th>
         </Tr>
       </Thead>
@@ -531,6 +532,22 @@ export default function AlertsManagement() {
               </Td>
               <Td fontSize="sm">{alert.classification}</Td>
               <Td>
+                <Badge
+                  colorScheme={
+                    alert.triageLevel === "Critical"
+                      ? "red"
+                      : alert.triageLevel === "High"
+                      ? "orange"
+                      : alert.triageLevel === "Medium"
+                      ? "yellow"
+                      : "blue"
+                  }
+                  fontSize="xs"
+                >
+                  {alert.triageLevel}
+                </Badge>
+              </Td>
+              <Td>
                 <HStack spacing={1}>
                   <IconButton
                     aria-label="View details"
@@ -560,7 +577,7 @@ export default function AlertsManagement() {
           ))
         ) : (
           <Tr>
-            <Td colSpan={showSource ? 9 : 8} textAlign="center" py={8} color="gray.500">
+            <Td colSpan={showSource ? 10 : 9} textAlign="center" py={8} color="gray.500">
               No alerts found
             </Td>
           </Tr>

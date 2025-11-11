@@ -184,10 +184,24 @@ export default function AlertsManagement() {
       // Get all saved metadata
       const allMetadata = getAllAlertMetadata();
 
+      // Track IDs to ensure uniqueness within this batch
+      const usedIds = new Set();
+      const getUniqueId = (baseId) => {
+        let uniqueId = baseId;
+        let counter = 1;
+        while (usedIds.has(uniqueId)) {
+          uniqueId = `${baseId}-dup${counter}`;
+          counter++;
+        }
+        usedIds.add(uniqueId);
+        return uniqueId;
+      };
+
       // Enrich Suricata alerts with local state AND persisted metadata
       const enrichedSuricata = (suricata || []).map((alert) => {
-        const id = generateStableAlertId(alert, "Suricata");
-        const savedMetadata = allMetadata[id];
+        const baseId = generateStableAlertId(alert, "Suricata");
+        const id = getUniqueId(baseId);
+        const savedMetadata = allMetadata[id] || allMetadata[baseId]; // Check both versioned and base ID
 
         if (savedMetadata) {
           console.log(`📋 Loading saved metadata for Suricata alert: ${id.substring(0, 50)}...`);
@@ -211,8 +225,9 @@ export default function AlertsManagement() {
 
       // Enrich Zeek logs with local state AND persisted metadata
       const enrichedZeek = (zeek || []).map((log) => {
-        const id = generateStableAlertId(log, "Zeek");
-        const savedMetadata = allMetadata[id];
+        const baseId = generateStableAlertId(log, "Zeek");
+        const id = getUniqueId(baseId);
+        const savedMetadata = allMetadata[id] || allMetadata[baseId]; // Check both versioned and base ID
 
         if (savedMetadata) {
           console.log(`📋 Loading saved metadata for Zeek log: ${id.substring(0, 50)}...`);
@@ -605,10 +620,8 @@ export default function AlertsManagement() {
             Each alert is uniquely identified by a hash of its properties (timestamp, IPs, ports, signature).
           </AlertDescription>
           <Text fontSize="xs" mt={2} opacity={0.8}>
-            <strong>Note:</strong> If you see duplicate alerts or missing updates, open browser console (F12) and run:{" "}
-            <code style={{background: 'rgba(0,0,0,0.1)', padding: '2px 4px', borderRadius: '3px'}}>
-              localStorage.removeItem('alert_metadata')
-            </code>
+            <strong>Note:</strong> Duplicate alerts (identical data) are auto-numbered to prevent display errors.
+            Only the first occurrence of duplicate alerts can have persistent metadata.
           </Text>
         </Box>
       </Alert>

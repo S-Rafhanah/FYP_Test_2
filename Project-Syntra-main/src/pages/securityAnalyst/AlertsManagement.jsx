@@ -13,12 +13,19 @@ import {
   FiRefreshCw, FiSearch, FiEdit, FiArchive, FiEye,
   FiFilter, FiX,
 } from "react-icons/fi";
-import { getSuricataAlerts, getZeekLogs } from "../../backend_api";
+import {
+  getSuricataAlerts,
+  getZeekLogs,
+  saveAlertMetadata as saveAlertMetadataAPI,
+  saveAlertMetadataBulk as saveAlertMetadataBulkAPI,
+  getAlertMetadata as getAlertMetadataAPI,
+  getAllAlertMetadata as getAllAlertMetadataAPI
+} from "../../backend_api";
 import { useAuth } from "../../auth/AuthContext";
 
 // Alert Metadata Persistence Helper
-// Stores analyst annotations (classification, status, tags, etc.) separately from raw logs
-const ALERT_METADATA_KEY = "alert_metadata";
+// Stores analyst annotations (classification, status, tags, etc.) in SQLite backend
+// This replaced localStorage to enable multi-user collaboration
 
 // Simple hash function to create unique identifiers
 const simpleHash = (str) => {
@@ -69,37 +76,46 @@ const generateStableAlertId = (alert, source) => {
   }
 };
 
-const getAlertMetadata = (alertId) => {
+// API-based metadata functions (replaced localStorage for multi-user support)
+const getAlertMetadata = async (alertId) => {
   try {
-    const metadata = localStorage.getItem(ALERT_METADATA_KEY);
-    if (!metadata) return null;
-    const allMetadata = JSON.parse(metadata);
-    return allMetadata[alertId] || null;
+    const metadata = await getAlertMetadataAPI(alertId);
+    return metadata;
   } catch (error) {
     console.error("Error reading alert metadata:", error);
     return null;
   }
 };
 
-const saveAlertMetadata = (alertId, metadata) => {
+const saveAlertMetadata = async (alertId, metadata) => {
   try {
-    const existing = localStorage.getItem(ALERT_METADATA_KEY);
-    const allMetadata = existing ? JSON.parse(existing) : {};
-    allMetadata[alertId] = {
-      ...metadata,
-      updatedAt: new Date().toISOString(),
-    };
-    localStorage.setItem(ALERT_METADATA_KEY, JSON.stringify(allMetadata));
+    await saveAlertMetadataAPI(alertId, metadata);
     console.log(`✅ Saved metadata for alert ID: ${alertId}`);
   } catch (error) {
     console.error("Error saving alert metadata:", error);
+    throw error; // Propagate error so caller can handle it
   }
 };
 
-const getAllAlertMetadata = () => {
+const saveAlertMetadataBulk = async (alertIds, metadata) => {
   try {
-    const metadata = localStorage.getItem(ALERT_METADATA_KEY);
-    return metadata ? JSON.parse(metadata) : {};
+    await saveAlertMetadataBulkAPI(alertIds, metadata);
+    console.log(`✅ Saved metadata for ${alertIds.length} alerts`);
+  } catch (error) {
+    console.error("Error saving bulk alert metadata:", error);
+    throw error;
+  }
+};
+
+const getAllAlertMetadata = async () => {
+  try {
+    const metadataArray = await getAllAlertMetadataAPI();
+    // Convert array to object keyed by alert_id for compatibility
+    const metadataObj = {};
+    metadataArray.forEach(item => {
+      metadataObj[item.alert_id] = item;
+    });
+    return metadataObj;
   } catch (error) {
     console.error("Error reading all alert metadata:", error);
     return {};
@@ -182,8 +198,8 @@ export default function AlertsManagement() {
         getZeekLogs(fetchLimit).catch(() => []),
       ]);
 
-      // Get all saved metadata
-      const allMetadata = getAllAlertMetadata();
+      // Get all saved metadata from backend
+      const allMetadata = await getAllAlertMetadata();
 
       // Track IDs to ensure uniqueness within this batch
       const usedIds = new Set();
@@ -422,8 +438,8 @@ export default function AlertsManagement() {
     });
   };
 
-  // Update Alert - now persists to localStorage
-  const handleUpdateAlert = () => {
+  // Update Alert - now persists to SQLite backend
+  const handleUpdateAlert = async () => {
     // Map triage level to severity
     const updatedSeverity = triageLevelToSeverity(updateModal.triageLevel);
 
@@ -437,15 +453,24 @@ export default function AlertsManagement() {
       archived: false,
     };
 
-    // If this is a consolidated alert, save metadata for ALL alerts in the group
-    if (updateModal.alert.consolidatedIds && updateModal.alert.consolidatedIds.length > 0) {
-      updateModal.alert.consolidatedIds.forEach(alertId => {
-        saveAlertMetadata(alertId, metadata);
+    try {
+      // If this is a consolidated alert, save metadata for ALL alerts in the group
+      if (updateModal.alert.consolidatedIds && updateModal.alert.consolidatedIds.length > 0) {
+        await saveAlertMetadataBulk(updateModal.alert.consolidatedIds, metadata);
+        console.log(`✅ Saved metadata for ${updateModal.alert.consolidatedIds.length} consolidated alerts`);
+      } else {
+        // Single alert - save metadata normally
+        await saveAlertMetadata(updateModal.alert.id, metadata);
+      }
+    } catch (error) {
+      toast({
+        title: "Error saving metadata",
+        description: error.message || "Failed to save alert metadata",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
       });
-      console.log(`✅ Saved metadata for ${updateModal.alert.consolidatedIds.length} consolidated alerts`);
-    } else {
-      // Single alert - save metadata normally
-      saveAlertMetadata(updateModal.alert.id, metadata);
+      return; // Don't proceed with UI updates if save failed
     }
 
     // Also update React state for immediate UI feedback
@@ -481,8 +506,8 @@ export default function AlertsManagement() {
     resetUpdateModal();
   };
 
-  // Archive Alert - now persists to localStorage
-  const handleArchiveAlert = () => {
+  // Archive Alert - now persists to SQLite backend
+  const handleArchiveAlert = async () => {
     if (!archiveModal.reason.trim()) {
       toast({
         title: "Please provide a reason for archiving",
@@ -492,27 +517,30 @@ export default function AlertsManagement() {
       return;
     }
 
-    // If this is a consolidated alert, archive ALL alerts in the group
-    if (archiveModal.alert.consolidatedIds && archiveModal.alert.consolidatedIds.length > 0) {
-      archiveModal.alert.consolidatedIds.forEach(alertId => {
-        const existingMetadata = getAlertMetadata(alertId);
-        saveAlertMetadata(alertId, {
-          ...(existingMetadata || {}),
+    try {
+      // If this is a consolidated alert, archive ALL alerts in the group
+      if (archiveModal.alert.consolidatedIds && archiveModal.alert.consolidatedIds.length > 0) {
+        await saveAlertMetadataBulk(archiveModal.alert.consolidatedIds, {
           archived: true,
-          archiveReason: archiveModal.reason,
-          archivedAt: new Date().toISOString(),
+          archive_reason: archiveModal.reason,
         });
+        console.log(`✅ Archived ${archiveModal.alert.consolidatedIds.length} consolidated alerts`);
+      } else {
+        // Single alert
+        await saveAlertMetadata(archiveModal.alert.id, {
+          archived: true,
+          archive_reason: archiveModal.reason,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error archiving alert",
+        description: error.message || "Failed to archive alert",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
       });
-      console.log(`✅ Archived ${archiveModal.alert.consolidatedIds.length} consolidated alerts`);
-    } else {
-      // Single alert
-      const existingMetadata = getAlertMetadata(archiveModal.alert.id);
-      saveAlertMetadata(archiveModal.alert.id, {
-        ...(existingMetadata || {}),
-        archived: true,
-        archiveReason: archiveModal.reason,
-        archivedAt: new Date().toISOString(),
-      });
+      return; // Don't proceed with UI updates if save failed
     }
 
     // Also update React state for immediate UI feedback

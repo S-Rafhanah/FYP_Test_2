@@ -229,3 +229,65 @@ export async function testNotification(id) {
   }
   return res.json();
 }
+
+// Alert Metadata Management APIs
+export async function saveAlertMetadata(alertId, metadata) {
+  const res = await fetch(`${API}/api/alerts/metadata`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeader()
+    },
+    body: JSON.stringify({
+      alert_id: alertId,
+      ...metadata
+    })
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function saveAlertMetadataBulk(alertIds, metadata) {
+  const res = await fetch(`${API}/api/alerts/metadata`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeader()
+    },
+    body: JSON.stringify({
+      alert_ids: alertIds,
+      ...metadata
+    })
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getAlertMetadata(alertId) {
+  const res = await fetch(`${API}/api/alerts/metadata/${alertId}`, {
+    headers: { ...getAuthHeader() }
+  });
+  if (res.status === 404) {
+    return null; // No metadata found
+  }
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getAllAlertMetadata() {
+  const res = await fetch(`${API}/api/alerts/metadata`, {
+    headers: { ...getAuthHeader() }
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}

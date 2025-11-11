@@ -175,6 +175,27 @@ db.run(`
   else console.log('✅ Dashboard Layouts table ready');
 });
 
+// Alert Metadata table - For storing analyst annotations on IDS alerts
+db.run(`
+  CREATE TABLE IF NOT EXISTS alert_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id TEXT UNIQUE NOT NULL,
+    classification TEXT,
+    status TEXT,
+    severity INTEGER,
+    triage_level TEXT,
+    tags TEXT,
+    notes TEXT,
+    archived BOOLEAN DEFAULT 0,
+    archive_reason TEXT,
+    updated_by TEXT,
+    updated_at TEXT NOT NULL
+  )
+`, (err) => {
+  if (err) console.error('Error creating alert_metadata table:', err);
+  else console.log('✅ Alert Metadata table ready');
+});
+
 // JWT-based RBAC middleware
 function authorize(roles = []) {
   return (req, res, next) => {
@@ -1068,6 +1089,145 @@ app.delete('/api/ids-rules/:id', authorize(['Network Administrator']), (req, res
     }
 
     res.json({ success: true, message: 'Rule deleted successfully' });
+  });
+});
+
+// =========================================================
+// ALERT METADATA MANAGEMENT APIs
+// =========================================================
+
+// POST /api/alerts/metadata - Save or update metadata for alert(s)
+app.post('/api/alerts/metadata', authorize(['Security Analyst', 'Network Administrator', 'Platform Administrator']), (req, res) => {
+  const { alert_id, alert_ids, classification, status, severity, triage_level, tags, notes, archived, archive_reason } = req.body;
+
+  // Support both single alert and bulk updates (for consolidated alerts)
+  const alertIds = alert_ids || (alert_id ? [alert_id] : []);
+
+  if (!alertIds || alertIds.length === 0) {
+    return res.status(400).json({ error: 'alert_id or alert_ids required' });
+  }
+
+  const updated_by = req.user?.email || req.user?.name || 'unknown';
+  const updated_at = new Date().toISOString();
+
+  // Prepare tags as JSON string
+  const tagsJson = tags ? JSON.stringify(tags) : null;
+
+  const sql = `
+    INSERT INTO alert_metadata (
+      alert_id, classification, status, severity, triage_level,
+      tags, notes, archived, archive_reason, updated_by, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(alert_id) DO UPDATE SET
+      classification = excluded.classification,
+      status = excluded.status,
+      severity = excluded.severity,
+      triage_level = excluded.triage_level,
+      tags = excluded.tags,
+      notes = excluded.notes,
+      archived = excluded.archived,
+      archive_reason = excluded.archive_reason,
+      updated_by = excluded.updated_by,
+      updated_at = excluded.updated_at
+  `;
+
+  let completed = 0;
+  let errors = [];
+
+  alertIds.forEach((alertId, index) => {
+    db.run(sql, [
+      alertId,
+      classification || null,
+      status || null,
+      severity || null,
+      triage_level || null,
+      tagsJson,
+      notes || null,
+      archived ? 1 : 0,
+      archive_reason || null,
+      updated_by,
+      updated_at
+    ], function(err) {
+      completed++;
+
+      if (err) {
+        console.error('[POST /api/alerts/metadata] Error for alert', alertId, ':', err);
+        errors.push({ alert_id: alertId, error: err.message });
+      }
+
+      // Send response after all inserts complete
+      if (completed === alertIds.length) {
+        if (errors.length > 0) {
+          return res.status(500).json({
+            success: false,
+            saved: alertIds.length - errors.length,
+            errors
+          });
+        }
+
+        res.status(200).json({
+          success: true,
+          count: alertIds.length,
+          updated_by,
+          updated_at
+        });
+      }
+    });
+  });
+});
+
+// GET /api/alerts/metadata/:alertId - Get metadata for specific alert
+app.get('/api/alerts/metadata/:alertId', authorize(['Security Analyst', 'Network Administrator', 'Platform Administrator']), (req, res) => {
+  const { alertId } = req.params;
+
+  const sql = `SELECT * FROM alert_metadata WHERE alert_id = ?`;
+
+  db.get(sql, [alertId], (err, row) => {
+    if (err) {
+      console.error('[GET /api/alerts/metadata/:alertId] Error:', err);
+      return res.status(500).json({ error: 'Failed to fetch metadata' });
+    }
+
+    if (!row) {
+      return res.status(404).json({ error: 'Metadata not found' });
+    }
+
+    // Parse tags back to array
+    if (row.tags) {
+      try {
+        row.tags = JSON.parse(row.tags);
+      } catch (e) {
+        row.tags = [];
+      }
+    }
+
+    res.json(row);
+  });
+});
+
+// GET /api/alerts/metadata - Get all metadata (bulk)
+app.get('/api/alerts/metadata', authorize(['Security Analyst', 'Network Administrator', 'Platform Administrator']), (req, res) => {
+  const sql = `SELECT * FROM alert_metadata ORDER BY updated_at DESC`;
+
+  db.all(sql, [], (err, rows) => {
+    if (err) {
+      console.error('[GET /api/alerts/metadata] Error:', err);
+      return res.status(500).json({ error: 'Failed to fetch metadata' });
+    }
+
+    // Parse tags for each row
+    const parsed = rows.map(row => {
+      if (row.tags) {
+        try {
+          row.tags = JSON.parse(row.tags);
+        } catch (e) {
+          row.tags = [];
+        }
+      }
+      return row;
+    });
+
+    res.json(parsed);
   });
 });
 

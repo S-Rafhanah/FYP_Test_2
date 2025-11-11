@@ -559,6 +559,7 @@ export default function AlertsManagement() {
           <Th>Timestamp</Th>
           {showSource && <Th>Source</Th>}
           <Th>Alert Name</Th>
+          <Th>Hits</Th>
           <Th>Source IP</Th>
           <Th>Dest IP</Th>
           <Th>Severity</Th>
@@ -591,15 +592,17 @@ export default function AlertsManagement() {
                   </Badge>
                 </Td>
               )}
-              <Td fontSize="sm" maxW="250px" fontWeight="medium">
-                <HStack spacing={2}>
-                  <Text isTruncated>{alert.signature}</Text>
-                  {alert.count > 1 && (
-                    <Badge colorScheme="purple" fontSize="xs" flexShrink={0}>
-                      {alert.count}x
-                    </Badge>
-                  )}
-                </HStack>
+              <Td fontSize="sm" maxW="250px" isTruncated fontWeight="medium">
+                {alert.signature}
+              </Td>
+              <Td>
+                <Badge
+                  colorScheme={alert.count > 1 ? "purple" : "gray"}
+                  fontSize="sm"
+                  fontWeight="bold"
+                >
+                  {alert.count || 1}
+                </Badge>
               </Td>
               <Td fontSize="sm">
                 {alert.src_ip || alert["id.orig_h"] || "N/A"}
@@ -660,7 +663,7 @@ export default function AlertsManagement() {
           ))
         ) : (
           <Tr>
-            <Td colSpan={showSource ? 9 : 8} textAlign="center" py={8} color="gray.500">
+            <Td colSpan={showSource ? 10 : 9} textAlign="center" py={8} color="gray.500">
               No alerts found
             </Td>
           </Tr>

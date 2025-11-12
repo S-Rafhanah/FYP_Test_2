@@ -16,14 +16,22 @@ If this VM has been configured with static IP `192.168.56.128`:
 
 1. **Import the VM** (.vmx or .ova file)
 2. **Start the VM**
-3. **Access the dashboard from your laptop:**
+3. **Login to the VM console** (credentials provided separately)
+4. **Start all services:**
+   ```bash
+   cd /home/user/FYP_Test_2
+   sudo ./start-services.sh
+   ```
+   This will start Elasticsearch, Suricata, Zeek, Filebeat, and the Backend API.
+
+5. **Access the dashboard from your laptop:**
    ```
    http://192.168.56.128:3000
    ```
-4. **Login credentials:** (provided separately)
-5. **Navigate to:** Platform Admin → IDS Dashboard
+6. **Login credentials:** (provided separately)
+7. **Navigate to:** Platform Admin → IDS Dashboard
 
-That's it! Everything should work out of the box.
+**Note:** If services were configured to auto-start (via `setup-autostart.sh`), step 4 may not be necessary.
 
 ---
 
@@ -151,6 +159,30 @@ curl http://192.168.56.128:3001/api/health/ids
 
 ## Troubleshooting
 
+### Quick Diagnosis (Run This First!) 🔍
+
+If anything isn't working, start here:
+
+```bash
+cd /home/user/FYP_Test_2
+./check-services.sh
+```
+
+This script will:
+- Check status of all services (Elasticsearch, Suricata, Zeek, Filebeat, Backend API)
+- Show which services are running/stopped
+- Provide specific recommendations
+- Display recent error logs
+
+**If services are not running, fix it with one command:**
+```bash
+sudo ./start-services.sh
+```
+
+This will start all required services and verify they're working.
+
+---
+
 ### Cannot Access Dashboard from Laptop
 
 **Symptom:** Browser shows "Cannot connect" or timeout
@@ -183,33 +215,45 @@ curl http://192.168.56.128:3001/api/health/ids
    ping 192.168.56.128
    ```
 
-### IDS Shows "Not Responding"
+### IDS Shows "Not Responding" ⚠️ **COMMON ISSUE**
 
-**Symptom:** Dashboard shows "Suricata IDS is not responding" or "Zeek Network Monitor is not responding"
+**Symptom:** Dashboard shows "Suricata IDS is not responding" or "Zeek Network Monitor is not responding" or "Elasticsearch is offline"
 
-**Causes & Solutions:**
+**Root Cause:** Services don't automatically start after VM import.
 
-1. **Elasticsearch not running:**
-   ```bash
-   curl http://localhost:9200
-   sudo systemctl start elasticsearch
-   ```
+**Quick Fix:**
+```bash
+cd /home/user/FYP_Test_2
+sudo ./start-services.sh
+```
 
-2. **No recent data (services just started):**
-   - Wait 1-2 minutes for data to flow
-   - Generate test traffic (see above)
+This is the **most common issue** with imported VMs. The script will start:
+- Elasticsearch (required for IDS status)
+- Suricata IDS
+- Zeek Network Monitor
+- Filebeat (ships logs to Elasticsearch)
+- Backend API
 
-3. **Services not running:**
-   ```bash
-   sudo systemctl start suricata
-   sudo systemctl start zeek
-   ```
+**After starting services:**
+1. Wait 1-2 minutes for data to flow through the pipeline
+2. Generate test traffic to create alerts: `curl http://testmynids.org/uid/index.html`
+3. Refresh the dashboard - IDS status should now show "online"
 
-4. **Filebeat not shipping logs:**
-   ```bash
-   sudo systemctl status filebeat
-   sudo systemctl start filebeat
-   ```
+**Manual service start (if needed):**
+```bash
+sudo systemctl start elasticsearch
+sudo systemctl start suricata
+sudo systemctl start zeek
+sudo systemctl start filebeat
+cd /home/user/FYP_Test_2/Project-Syntra-main/user-api && node server.js &
+```
+
+**To prevent this issue on future reboots:**
+```bash
+cd /home/user/FYP_Test_2
+sudo ./setup-autostart.sh
+```
+This configures all services to start automatically on boot.
 
 ### Wrong IP Address in Configuration
 

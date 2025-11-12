@@ -15,6 +15,7 @@ import DashboardHome from "./pages/platformAdmin/DashboardHome";
 import UserAccounts from "./pages/platformAdmin/UserAccounts";
 import ProfileTypes from "./pages/platformAdmin/ProfileTypes";
 import Alerts from "./pages/platformAdmin/Alerts";
+import MFASettings from "./pages/common/MFASettings";
 
 // Network Admin layout + routes
 // CHANGE: fix folder name and use relative imports
@@ -73,6 +74,7 @@ export default function Main() {
               <Route path="users" element={<UserAccounts />} />
               <Route path="profile-types" element={<ProfileTypes />} />
               <Route path="alerts" element={<Alerts />} />
+              <Route path="mfa-settings" element={<MFASettings />} />
             </Route>
           </Route>
 

@@ -6,6 +6,7 @@ import {
   MdIntegrationInstructions,
   MdSettings,
   MdDeviceHub,
+  MdShield,
 } from "react-icons/md";
 
 // Import page components
@@ -14,6 +15,7 @@ import AlertsPage from "../pages/networkAdmin/Alerts";
 import IDSRuleManagement from "../pages/networkAdmin/IDSRuleManagement";
 import IDSSourceIntegration from "../pages/networkAdmin/IDSSourceIntegration";
 import NotificationSettings from "../pages/networkAdmin/NotificationSettings";
+import MFASettings from "../pages/common/MFASettings";
 
 const networkAdminRoutes = [
   {
@@ -54,6 +56,14 @@ const networkAdminRoutes = [
     path: "/notifications",
     icon: <MdSettings />,
     component: <NotificationSettings />,
+    roles: ["Network Administrator"],
+  },
+  {
+    name: "MFA Settings",
+    layout: "/network-admin",
+    path: "/mfa-settings",
+    icon: <MdShield />,
+    component: <MFASettings />,
     roles: ["Network Administrator"],
   },
 ];

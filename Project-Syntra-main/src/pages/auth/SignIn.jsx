@@ -20,6 +20,7 @@ import DefaultAuth from 'layouts/auth/Default';
 import illustration from 'assets/img/auth/auth.jpeg';
 import { MdOutlineRemoveRedEye } from 'react-icons/md';
 import { RiEyeCloseLine } from 'react-icons/ri';
+import MFAVerification from '../../components/mfa/MFAVerification';
 
 function SignIn() {
   // UI state
@@ -36,6 +37,11 @@ function SignIn() {
   const [password, setPassword] = React.useState('');
   const [err, setErr] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
+
+  // MFA state
+  const [mfaRequired, setMfaRequired] = React.useState(false);
+  const [mfaUserId, setMfaUserId] = React.useState(null);
+  const [mfaRole, setMfaRole] = React.useState(null);
 
   // Map dropdown label → base path (URL prefix drives role)
   const baseFor = (label) => {
@@ -83,12 +89,22 @@ function SignIn() {
         throw new Error(msg?.error || 'Login failed.');
       }
 
-      const { token, user } = await res.json();
+      const data = await res.json();
+
+      // Check if MFA is required
+      if (data.mfaRequired) {
+        setMfaRequired(true);
+        setMfaUserId(data.userId);
+        setMfaRole(data.role);
+        return;
+      }
+
+      // Normal login (no MFA)
+      const { token, user } = data;
 
       // Persist for refreshes / sidebar profile
       localStorage.setItem('user', JSON.stringify(user));
       localStorage.setItem('accessToken', token);
-
 
       // If your AuthContext expects token + user
       login?.(token, user);
@@ -101,6 +117,47 @@ function SignIn() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleMFAVerify = async (code, isBackupCode) => {
+    try {
+      const res = await fetch('/api/auth/mfa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: mfaUserId,
+          token: code,
+          isBackupCode: isBackupCode,
+        }),
+      });
+
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({}));
+        throw new Error(msg?.error || 'Verification failed.');
+      }
+
+      const { token, user } = await res.json();
+
+      // Persist for refreshes / sidebar profile
+      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem('accessToken', token);
+
+      // If your AuthContext expects token + user
+      login?.(token, user);
+
+      // Route from user.role (source of truth)
+      const base = baseFor(user.role || mfaRole);
+      navigate(`${base}/dashboard`, { replace: true });
+    } catch (e2) {
+      throw e2; // Let MFAVerification component handle the error
+    }
+  };
+
+  const handleMFACancel = () => {
+    setMfaRequired(false);
+    setMfaUserId(null);
+    setMfaRole(null);
+    setPassword('');
   };
 
   return (
@@ -118,20 +175,22 @@ function SignIn() {
         mt={{ base: '40px', md: '14vh' }}
         flexDirection="column"
       >
-        <Box me="auto">
-          <Heading color={textColor} fontSize="36px" mb="10px">
-            Welcome
-          </Heading>
-          <Text
-            mb="36px"
-            ms="4px"
-            color={textColorSecondary}
-            fontWeight="400"
-            fontSize="md"
-          >
-            Choose your role and enter your credentials.
-          </Text>
-        </Box>
+        {!mfaRequired && (
+          <Box me="auto">
+            <Heading color={textColor} fontSize="36px" mb="10px">
+              Welcome
+            </Heading>
+            <Text
+              mb="36px"
+              ms="4px"
+              color={textColorSecondary}
+              fontWeight="400"
+              fontSize="md"
+            >
+              Choose your role and enter your credentials.
+            </Text>
+          </Box>
+        )}
 
         <Flex
           zIndex="2"
@@ -144,6 +203,13 @@ function SignIn() {
           me="auto"
           mb={{ base: '20px', md: 'auto' }}
         >
+          {mfaRequired ? (
+            <MFAVerification
+              onVerify={handleMFAVerify}
+              onCancel={handleMFACancel}
+              email={email}
+            />
+          ) : (
           <form onSubmit={handleSubmit}>
             <FormControl>
               {/* User Type (role) */}
@@ -263,6 +329,7 @@ function SignIn() {
               </Flex>
             </FormControl>
           </form>
+          )}
         </Flex>
       </Flex>
     </DefaultAuth>

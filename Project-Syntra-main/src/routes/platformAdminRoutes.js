@@ -1,6 +1,6 @@
 // routes/platformAdminRoutes.js
 import React from "react";
-import { FiHome, FiUsers, FiSettings, FiBell } from "react-icons/fi";
+import { FiHome, FiUsers, FiSettings, FiBell, FiShield } from "react-icons/fi";
 
 const platformAdminRoutes = [
   {
@@ -30,6 +30,13 @@ const platformAdminRoutes = [
     path: "/alerts",
     icon: <FiBell />,
     roles: ["Platform Administrator", "Security Analyst"],
+  },
+  {
+    name: "MFA Settings",
+    layout: "/platform-admin",
+    path: "/mfa-settings",
+    icon: <FiShield />,
+    roles: ["Platform Administrator"],
   },
 ];
 

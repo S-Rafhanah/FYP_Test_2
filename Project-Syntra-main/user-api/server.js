@@ -21,7 +21,7 @@ const SALT_ROUNDS = 10;
 // Allow overrides via environment variables
 const PORT = Number(process.env.PORT || 3001);
 const JWT_SECRET = process.env.JWT_SECRET || 'syntra-secret-key'; // change in prod!
-const ELASTIC_URL = process.env.ELASTIC_URL || 'http://192.168.56.128:9200';
+const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 
 // Create Elasticsearch client (used by /api/suricata/alerts and /api/zeek/logs)
 const es = new ESClient({ node: ELASTIC_URL });

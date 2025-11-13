@@ -1,0 +1,11 @@
+{
+  "abuseipdb_api_key": "YOUR_API_KEY_HERE",
+  "target_ip": "192.168.56.128",
+  "target_ports": [80, 443, 22, 3000, 5001],
+  "attack_settings": {
+    "total_packets": 50,
+    "packets_per_second": 5,
+    "confidence_minimum": 90
+  },
+  "countries": ["CN", "RU", "US", "BR", "IN", "KR", "DE", "FR"]
+}

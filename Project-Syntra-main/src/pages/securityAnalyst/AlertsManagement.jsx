@@ -13,8 +13,64 @@ import {
   FiRefreshCw, FiSearch, FiEdit, FiArchive, FiEye,
   FiFilter, FiX,
 } from "react-icons/fi";
-import { getSuricataAlerts, getZeekLogs } from "../../backend_api";
+import {
+  getSuricataAlerts,
+  getZeekLogs,
+  saveAlertMetadata,
+  saveAlertMetadataBulk,
+  getAlertMetadata,
+  getAllAlertMetadata
+} from "../../backend_api";
 import { useAuth } from "../../auth/AuthContext";
+
+// Simple hash function to create unique identifiers
+const simpleHash = (str) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+};
+
+// Generate stable ID from alert properties (not index-based)
+const generateStableAlertId = (alert, source) => {
+  // Use _id if available from backend
+  if (alert._id) return alert._id;
+
+  // Otherwise create stable ID from alert properties that don't change
+  if (source === "Suricata") {
+    // Use timestamp + signature + src_ip + dest_ip for Suricata
+    const signature = alert.alert?.signature || alert.signature || "unknown";
+    const srcIp = alert.src_ip || "unknown";
+    const destIp = alert.dest_ip || "unknown";
+    const srcPort = alert.src_port || "0";
+    const destPort = alert.dest_port || "0";
+    const timestamp = alert.timestamp || Date.now();
+
+    // Create comprehensive string for hashing
+    const str = `${timestamp}-${srcIp}-${srcPort}-${destIp}-${destPort}-${signature}`;
+    const hash = simpleHash(str);
+    return `suricata-${hash}-${timestamp}`.substring(0, 100);
+  } else {
+    // Use uid or create from multiple fields for Zeek
+    if (alert.uid) return `zeek-${alert.uid}`;
+
+    const origH = alert["id.orig_h"] || "unknown";
+    const respH = alert["id.resp_h"] || "unknown";
+    const origP = alert["id.orig_p"] || "0";
+    const respP = alert["id.resp_p"] || "0";
+    const service = alert.service || "";
+    const proto = alert.proto || "";
+    const timestamp = alert.ts || alert.timestamp || Date.now();
+
+    // Create comprehensive string for hashing
+    const str = `${timestamp}-${origH}-${origP}-${respH}-${respP}-${service}-${proto}`;
+    const hash = simpleHash(str);
+    return `zeek-${hash}-${timestamp}`.substring(0, 100);
+  }
+};
 
 // Alert severity badge helper
 const getSeverityBadge = (severity) => {
@@ -69,44 +125,86 @@ export default function AlertsManagement() {
   const border = useColorModeValue("gray.200", "whiteAlpha.200");
   const headerBg = useColorModeValue("gray.50", "navy.900");
 
-  const fetchAlerts = async () => {
+  const fetchAlerts = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
       setLoading(true);
-      const [suricata, zeek] = await Promise.all([
+      const [suricata, zeek, allMetadata] = await Promise.all([
         getSuricataAlerts(200).catch(() => []),
         getZeekLogs(200).catch(() => []),
+        getAllAlertMetadata().catch(() => []),
       ]);
 
-      // Enrich Suricata alerts with local state
-      const enrichedSuricata = (suricata || []).map((alert, idx) => ({
-        ...alert,
-        id: alert._id || `suricata-${idx}`,
-        source: "Suricata",
-        signature: alert.alert?.signature || alert.signature || "Unknown",
-        severity: alert.alert?.severity || alert.severity || 3,
-        classification: alert.classification || "Unclassified",
-        status: alert.status || "New",
-        tags: alert.tags || [],
-        triageLevel: alert.triageLevel || "Medium",
-        notes: alert.notes || "",
-        archived: alert.archived || false,
-      }));
+      // Convert metadata array to object keyed by alert_id
+      const metadataObj = {};
+      (allMetadata || []).forEach(item => {
+        metadataObj[item.alert_id] = item;
+      });
 
-      // Enrich Zeek logs with local state
-      const enrichedZeek = (zeek || []).map((log, idx) => ({
-        ...log,
-        id: log._id || `zeek-${idx}`,
-        source: "Zeek",
-        signature: log.service || log.proto || "Network Activity",
-        severity: 3, // Default to low severity for logs
-        classification: log.classification || "Network Log",
-        status: log.status || "New",
-        tags: log.tags || [],
-        triageLevel: log.triageLevel || "Low",
-        notes: log.notes || "",
-        archived: log.archived || false,
-      }));
+      // Track IDs to ensure uniqueness within this batch
+      const usedIds = new Set();
+      const getUniqueId = (baseId) => {
+        let uniqueId = baseId;
+        let counter = 1;
+        while (usedIds.has(uniqueId)) {
+          uniqueId = `${baseId}-dup${counter}`;
+          counter++;
+        }
+        usedIds.add(uniqueId);
+        return uniqueId;
+      };
+
+      // Enrich Suricata alerts with saved metadata from database
+      const enrichedSuricata = (suricata || []).map((alert) => {
+        const baseId = generateStableAlertId(alert, "Suricata");
+        const id = getUniqueId(baseId);
+        const savedMetadata = metadataObj[id] || metadataObj[baseId];
+
+        if (savedMetadata) {
+          console.log(`📋 Loading saved metadata for Suricata alert: ${id.substring(0, 50)}...`);
+        }
+
+        return {
+          ...alert,
+          id,
+          source: "Suricata",
+          signature: alert.alert?.signature || alert.signature || "Unknown",
+          // Use saved metadata if available, otherwise use defaults
+          severity: savedMetadata?.severity || alert.alert?.severity || alert.severity || 3,
+          classification: savedMetadata?.classification || alert.classification || "Unclassified",
+          status: savedMetadata?.status || alert.status || "New",
+          tags: savedMetadata?.tags || alert.tags || [],
+          triageLevel: savedMetadata?.triageLevel || alert.triageLevel || "Medium",
+          notes: savedMetadata?.notes || alert.notes || "",
+          archived: savedMetadata?.archived || alert.archived || false,
+        };
+      });
+
+      // Enrich Zeek logs with saved metadata from database
+      const enrichedZeek = (zeek || []).map((log) => {
+        const baseId = generateStableAlertId(log, "Zeek");
+        const id = getUniqueId(baseId);
+        const savedMetadata = metadataObj[id] || metadataObj[baseId];
+
+        if (savedMetadata) {
+          console.log(`📋 Loading saved metadata for Zeek log: ${id.substring(0, 50)}...`);
+        }
+
+        return {
+          ...log,
+          id,
+          source: "Zeek",
+          signature: log.service || log.proto || "Network Activity",
+          // Use saved metadata if available, otherwise use defaults
+          severity: savedMetadata?.severity || 3,
+          classification: savedMetadata?.classification || log.classification || "Network Log",
+          status: savedMetadata?.status || log.status || "New",
+          tags: savedMetadata?.tags || log.tags || [],
+          triageLevel: savedMetadata?.triageLevel || log.triageLevel || "Low",
+          notes: savedMetadata?.notes || log.notes || "",
+          archived: savedMetadata?.archived || log.archived || false,
+        };
+      });
 
       setSuricataAlerts(enrichedSuricata);
       setZeekLogs(enrichedZeek);
@@ -121,14 +219,13 @@ export default function AlertsManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated, toast]);
 
   useEffect(() => {
     fetchAlerts();
     const interval = setInterval(fetchAlerts, 30000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [fetchAlerts]);
 
   // Combine all alerts - memoized for performance
   const allAlerts = useMemo(() =>
@@ -279,8 +376,39 @@ export default function AlertsManagement() {
     });
   };
 
-  // Update Alert
-  const handleUpdateAlert = () => {
+  // Update Alert - now persists to backend database
+  const handleUpdateAlert = async () => {
+    const metadata = {
+      classification: updateModal.classification,
+      status: updateModal.status,
+      tags: updateModal.tags,
+      triageLevel: updateModal.triageLevel,
+      notes: updateModal.notes,
+      archived: false,
+    };
+
+    try {
+      // If this is a consolidated alert, save metadata for ALL alerts in the group
+      if (updateModal.alert.consolidatedIds && updateModal.alert.consolidatedIds.length > 0) {
+        await saveAlertMetadataBulk(updateModal.alert.consolidatedIds, metadata);
+        console.log(`✅ Saved metadata for ${updateModal.alert.consolidatedIds.length} consolidated alerts`);
+      } else {
+        // Single alert - save metadata normally
+        await saveAlertMetadata(updateModal.alert.id, metadata);
+        console.log(`✅ Saved metadata for alert ID: ${updateModal.alert.id}`);
+      }
+    } catch (error) {
+      toast({
+        title: "Error saving metadata",
+        description: error.message || "Failed to save alert metadata",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+      return; // Don't proceed with UI updates if save failed
+    }
+
+    // Also update React state for immediate UI feedback
     const updateAlertInList = (alerts) =>
       alerts.map((a) =>
         a.id === updateModal.alert.id
@@ -302,15 +430,15 @@ export default function AlertsManagement() {
     }
 
     toast({
-      title: "Alert updated successfully",
+      title: "Alert updated and saved successfully",
       status: "success",
       duration: 2000,
     });
     setUpdateModal({ isOpen: false, alert: null });
   };
 
-  // Archive Alert
-  const handleArchiveAlert = () => {
+  // Archive Alert - now persists to backend database
+  const handleArchiveAlert = async () => {
     if (!archiveModal.reason.trim()) {
       toast({
         title: "Please provide a reason for archiving",
@@ -320,6 +448,33 @@ export default function AlertsManagement() {
       return;
     }
 
+    const alert = archiveModal.alert;
+    const metadata = {
+      classification: alert.classification,
+      status: alert.status,
+      tags: alert.tags || [],
+      triageLevel: alert.triageLevel,
+      notes: alert.notes || "",
+      archived: true,
+      archiveReason: archiveModal.reason,
+    };
+
+    try {
+      // Save archive status to database
+      await saveAlertMetadata(alert.id, metadata);
+      console.log(`✅ Archived alert ID: ${alert.id}`);
+    } catch (error) {
+      toast({
+        title: "Error archiving alert",
+        description: error.message || "Failed to save archive status",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+      return; // Don't proceed with UI updates if save failed
+    }
+
+    // Also update React state for immediate UI feedback
     const archiveInList = (alerts) =>
       alerts.map((a) =>
         a.id === archiveModal.alert.id
@@ -334,7 +489,7 @@ export default function AlertsManagement() {
     }
 
     toast({
-      title: "Alert archived successfully",
+      title: "Alert archived and saved successfully",
       status: "success",
       duration: 2000,
     });

@@ -34,25 +34,25 @@ const simpleHash = (str) => {
   return Math.abs(hash).toString(36);
 };
 
-// Generate stable ID from alert properties (not index-based)
+// Generate stable ID from alert properties (timestamp-independent for persistence)
+// This ensures all alerts of the same type (signature + IPs) share metadata
 const generateStableAlertId = (alert, source) => {
   // Use _id if available from backend
   if (alert._id) return alert._id;
 
-  // Otherwise create stable ID from alert properties that don't change
+  // Create stable ID without timestamp - metadata persists for all alerts of this type
   if (source === "Suricata") {
-    // Use timestamp + signature + src_ip + dest_ip for Suricata
+    // Use signature + src_ip + dest_ip (NO timestamp)
     const signature = alert.alert?.signature || alert.signature || "unknown";
     const srcIp = alert.src_ip || "unknown";
     const destIp = alert.dest_ip || "unknown";
     const srcPort = alert.src_port || "0";
     const destPort = alert.dest_port || "0";
-    const timestamp = alert.timestamp || Date.now();
 
-    // Create comprehensive string for hashing
-    const str = `${timestamp}-${srcIp}-${srcPort}-${destIp}-${destPort}-${signature}`;
+    // Create string for hashing (timestamp removed for stability)
+    const str = `${srcIp}-${srcPort}-${destIp}-${destPort}-${signature}`;
     const hash = simpleHash(str);
-    return `suricata-${hash}-${timestamp}`.substring(0, 100);
+    return `suricata-${hash}`;
   } else {
     // Use uid or create from multiple fields for Zeek
     if (alert.uid) return `zeek-${alert.uid}`;
@@ -63,12 +63,11 @@ const generateStableAlertId = (alert, source) => {
     const respP = alert["id.resp_p"] || "0";
     const service = alert.service || "";
     const proto = alert.proto || "";
-    const timestamp = alert.ts || alert.timestamp || Date.now();
 
-    // Create comprehensive string for hashing
-    const str = `${timestamp}-${origH}-${origP}-${respH}-${respP}-${service}-${proto}`;
+    // Create string for hashing (timestamp removed for stability)
+    const str = `${origH}-${origP}-${respH}-${respP}-${service}-${proto}`;
     const hash = simpleHash(str);
-    return `zeek-${hash}-${timestamp}`.substring(0, 100);
+    return `zeek-${hash}`;
   }
 };
 

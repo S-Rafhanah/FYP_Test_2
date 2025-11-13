@@ -1491,18 +1491,105 @@ app.get('/api/health', async (req, res) => {
   // Check SQLite database
   try {
     await new Promise((resolve, reject) => {
-      db.get('SELECT 1', (err) => {
+      db.get('SELECT 1 as test', [], (err, row) => {
         if (err) reject(err);
+        else if (!row || row.test !== 1) reject(new Error('Invalid response'));
         else resolve();
       });
     });
     health.database = 'online';
   } catch (err) {
+    console.error('[Health Check] Database error:', err);
     health.database = 'offline';
     health.status = 'critical';
   }
 
   res.json(health);
+});
+
+// GET /api/health/components - Get health status of all components (Dashboard display)
+app.get('/api/health/components', authorize(['Platform Administrator', 'Security Analyst']), async (req, res) => {
+  const components = {
+    suricata: 'unknown',
+    zeek: 'unknown',
+    database: 'unknown',
+    lastCheck: new Date().toISOString()
+  };
+
+  // Check SQLite database
+  try {
+    await new Promise((resolve, reject) => {
+      db.get('SELECT 1 as test', [], (err, row) => {
+        if (err) reject(err);
+        else if (!row || row.test !== 1) reject(new Error('Invalid response'));
+        else resolve();
+      });
+    });
+    components.database = 'online';
+  } catch (err) {
+    console.error('[Components Health] Database error:', err);
+    components.database = 'offline';
+  }
+
+  // Check Suricata IDS (recent data in last 10 minutes)
+  try {
+    const suricataCheck = await es.search({
+      index: ['filebeat-*', '.ds-filebeat-*'],
+      size: 1,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          must: [{ match: { 'event.module': 'suricata' } }],
+          filter: [{ range: { '@timestamp': { gte: 'now-10m' } } }]
+        }
+      }
+    }).catch(() => null);
+
+    if (suricataCheck && suricataCheck.hits?.hits?.length > 0) {
+      components.suricata = 'online';
+    } else {
+      // Check if any Suricata data exists (even if old)
+      const anyData = await es.search({
+        index: ['filebeat-*', '.ds-filebeat-*'],
+        size: 1,
+        query: { match: { 'event.module': 'suricata' } }
+      }).catch(() => null);
+      components.suricata = anyData?.hits?.hits?.length > 0 ? 'stale' : 'offline';
+    }
+  } catch (err) {
+    console.error('[Components Health] Suricata check error:', err);
+  }
+
+  // Check Zeek Monitor (recent data in last 10 minutes)
+  try {
+    const zeekCheck = await es.search({
+      index: ['filebeat-*', '.ds-filebeat-*'],
+      size: 1,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          must: [{ match: { 'event.module': 'zeek' } }],
+          filter: [{ range: { '@timestamp': { gte: 'now-10m' } } }]
+        }
+      }
+    }).catch(() => null);
+
+    if (zeekCheck && zeekCheck.hits?.hits?.length > 0) {
+      components.zeek = 'online';
+    } else {
+      // Check if any Zeek data exists (even if old)
+      const anyData = await es.search({
+        index: ['filebeat-*', '.ds-filebeat-*'],
+        size: 1,
+        query: { match: { 'event.module': 'zeek' } }
+      }).catch(() => null);
+      components.zeek = anyData?.hits?.hits?.length > 0 ? 'stale' : 'offline';
+    }
+  } catch (err) {
+    console.error('[Components Health] Zeek check error:', err);
+  }
+
+  res.json(components);
 });
 
 // GET /api/system/alerts - Get system-level alerts
@@ -1514,16 +1601,19 @@ app.get('/api/system/alerts', authorize(['Platform Administrator', 'Security Ana
     // Check SQLite database health
     try {
       await new Promise((resolve, reject) => {
-        // Test basic connectivity
-        db.get('SELECT 1', (err) => {
-          if (err) return reject(err);
+        // Test basic connectivity with verification
+        db.get('SELECT 1 as test', [], (err, row) => {
+          if (err) reject(err);
+          else if (!row || row.test !== 1) reject(new Error('Invalid response'));
+          else resolve();
+        });
+      });
 
-          // Verify core tables exist
-          db.get(`SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users', 'ids_rules', 'profile_types')`, (err, row) => {
-            if (err) reject(err);
-            else if (!row) reject(new Error('Core tables missing'));
-            else resolve();
-          });
+      // Verify core tables exist
+      await new Promise((resolve, reject) => {
+        db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='users'", [], (err, row) => {
+          if (err || !row) reject(new Error('Core tables missing'));
+          else resolve();
         });
       });
     } catch (err) {

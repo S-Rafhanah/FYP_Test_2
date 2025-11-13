@@ -129,6 +129,14 @@ export async function getIDSHealth() {
   return res.json();
 }
 
+export async function getComponentsHealth() {
+  const res = await fetch(`${API}/api/health/components`, {
+    headers: { ...getAuthHeader() }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function getSystemAlerts() {
   const res = await fetch(`${API}/api/system/alerts`, {
     headers: { ...getAuthHeader() }

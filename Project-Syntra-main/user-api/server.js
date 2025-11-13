@@ -1613,95 +1613,118 @@ app.post('/api/alerts/metadata', authorize(['Security Analyst', 'Platform Admini
   const now = new Date().toISOString();
   const tagsJson = Array.isArray(tags) ? JSON.stringify(tags) : tags;
 
-  // Use INSERT OR REPLACE to update if exists, insert if not
-  db.run(`
-    INSERT OR REPLACE INTO alert_metadata
-    (alert_id, classification, status, tags, triageLevel, notes, severity, archived, archiveReason, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
-      COALESCE((SELECT created_at FROM alert_metadata WHERE alert_id = ?), ?),
-      ?)
-  `, [
-    alertId,
-    classification,
-    status,
-    tagsJson,
-    triageLevel,
-    notes,
-    severity,
-    archived ? 1 : 0,
-    archiveReason,
-    alertId, // for COALESCE subquery
-    now,     // created_at if new
-    now      // updated_at
-  ], function(err) {
+  // Check if record exists first to preserve created_at
+  db.get('SELECT created_at FROM alert_metadata WHERE alert_id = ?', [alertId], (err, row) => {
     if (err) {
-      console.error('[POST /api/alerts/metadata] DB error:', err);
+      console.error('[POST /api/alerts/metadata] DB error checking:', err);
       return res.status(500).json({ error: err.message });
     }
-    console.log(`✅ Saved metadata for alert: ${alertId}`);
-    res.json({ success: true, alertId, rowsAffected: this.changes });
+
+    const createdAt = row?.created_at || now;
+
+    // Now do the insert or replace with the correct created_at
+    db.run(`
+      INSERT OR REPLACE INTO alert_metadata
+      (alert_id, classification, status, tags, triageLevel, notes, severity, archived, archiveReason, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      alertId,
+      classification,
+      status,
+      tagsJson,
+      triageLevel,
+      notes,
+      severity,
+      archived ? 1 : 0,
+      archiveReason,
+      createdAt,
+      now
+    ], function(err) {
+      if (err) {
+        console.error('[POST /api/alerts/metadata] DB error saving:', err);
+        return res.status(500).json({ error: err.message });
+      }
+      console.log(`✅ Saved metadata for alert: ${alertId.substring(0, 50)}...`);
+      res.json({ success: true, alertId, rowsAffected: this.changes });
+    });
   });
 });
 
 // POST /api/alerts/metadata/bulk - Save metadata for multiple alerts
-app.post('/api/alerts/metadata/bulk', authorize(['Security Analyst', 'Platform Administrator']), (req, res) => {
+app.post('/api/alerts/metadata/bulk', authorize(['Security Analyst', 'Platform Administrator']), async (req, res) => {
   const { alertIds, classification, status, tags, triageLevel, notes, severity, archived, archiveReason } = req.body;
 
   if (!Array.isArray(alertIds) || alertIds.length === 0) {
     return res.status(400).json({ error: 'alertIds array is required' });
   }
 
+  console.log(`[Bulk Save] Saving metadata for ${alertIds.length} alerts`);
+
   const now = new Date().toISOString();
   const tagsJson = Array.isArray(tags) ? JSON.stringify(tags) : tags;
 
-  // Use a transaction to save all alerts
-  db.serialize(() => {
-    db.run('BEGIN TRANSACTION');
+  // Process each alert sequentially to avoid transaction issues
+  let successCount = 0;
+  const errors = [];
 
-    let completed = 0;
-    let errors = [];
-
-    alertIds.forEach((alertId, index) => {
-      db.run(`
-        INSERT OR REPLACE INTO alert_metadata
-        (alert_id, classification, status, tags, triageLevel, notes, severity, archived, archiveReason, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
-          COALESCE((SELECT created_at FROM alert_metadata WHERE alert_id = ?), ?),
-          ?)
-      `, [
-        alertId,
-        classification,
-        status,
-        tagsJson,
-        triageLevel,
-        notes,
-        severity,
-        archived ? 1 : 0,
-        archiveReason,
-        alertId,
-        now,
-        now
-      ], function(err) {
-        if (err) {
-          errors.push({ alertId, error: err.message });
-        }
-        completed++;
-
-        // When all are done, commit or rollback
-        if (completed === alertIds.length) {
-          if (errors.length > 0) {
-            db.run('ROLLBACK');
-            console.error('[POST /api/alerts/metadata/bulk] Errors:', errors);
-            return res.status(500).json({ error: 'Failed to save some alerts', errors });
-          } else {
-            db.run('COMMIT');
-            console.log(`✅ Saved metadata for ${alertIds.length} alerts`);
-            return res.json({ success: true, count: alertIds.length });
+  for (const alertId of alertIds) {
+    try {
+      await new Promise((resolve, reject) => {
+        // Check if record exists first
+        db.get('SELECT created_at FROM alert_metadata WHERE alert_id = ?', [alertId], (err, row) => {
+          if (err) {
+            console.error(`[Bulk Save] Error checking alert ${alertId}:`, err);
+            return reject(err);
           }
-        }
+
+          const createdAt = row?.created_at || now;
+
+          // Now do the insert or replace with the correct created_at
+          db.run(`
+            INSERT OR REPLACE INTO alert_metadata
+            (alert_id, classification, status, tags, triageLevel, notes, severity, archived, archiveReason, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            alertId,
+            classification,
+            status,
+            tagsJson,
+            triageLevel,
+            notes,
+            severity,
+            archived ? 1 : 0,
+            archiveReason,
+            createdAt,
+            now
+          ], function(err) {
+            if (err) {
+              console.error(`[Bulk Save] Error saving alert ${alertId.substring(0, 50)}:`, err.message);
+              return reject(err);
+            }
+            resolve();
+          });
+        });
       });
+      successCount++;
+    } catch (err) {
+      errors.push({ alertId: alertId.substring(0, 50), error: err.message });
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error(`[POST /api/alerts/metadata/bulk] ${successCount} succeeded, ${errors.length} failed:`, errors);
+    // Return 207 Multi-Status instead of 500 so frontend knows some succeeded
+    return res.status(207).json({
+      success: successCount > 0,
+      message: `Saved ${successCount}/${alertIds.length} alerts`,
+      successCount,
+      failedCount: errors.length,
+      errors
     });
-  });
+  } else {
+    console.log(`✅ Saved metadata for ${alertIds.length} alerts`);
+    return res.json({ success: true, count: alertIds.length });
+  }
 });
 
 // GET /api/alerts/metadata/:alertId - Get metadata for a specific alert

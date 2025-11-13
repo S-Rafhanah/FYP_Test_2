@@ -268,11 +268,23 @@ export async function saveAlertMetadataBulk(alertIds, metadata) {
     },
     body: JSON.stringify({ alertIds, ...metadata })
   });
+
+  // 207 Multi-Status indicates partial success - treat as success
+  if (res.status === 207) {
+    const result = await res.json();
+    console.warn(`⚠️ Partial save: ${result.successCount}/${alertIds.length} alerts saved`, result.errors);
+    return result; // Return partial success data
+  }
+
   if (!res.ok) {
     let errorMsg = `HTTP ${res.status}`;
     try {
       const error = await res.json();
-      errorMsg = error.error || errorMsg;
+      if (error.errors && error.errors.length > 0) {
+        errorMsg = `${error.message || 'Failed to save alerts'}. Errors: ${error.errors.map(e => e.error).join(', ')}`;
+      } else {
+        errorMsg = error.error || error.message || errorMsg;
+      }
     } catch (e) {
       if (res.status === 404) {
         errorMsg = "API endpoint /api/alerts/metadata/bulk not found. Please ensure backend endpoints are implemented.";

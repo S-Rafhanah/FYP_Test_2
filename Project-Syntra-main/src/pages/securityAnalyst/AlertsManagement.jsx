@@ -90,9 +90,10 @@ const getSeverityBadge = (severity) => {
     medium: "yellow",
     low: "blue",
     info: "gray",
-    1: "red",
-    2: "orange",
-    3: "yellow",
+    1: "red",      // Critical
+    2: "orange",   // High
+    3: "yellow",   // Medium
+    4: "blue",     // Low
   };
   return colors[severity] || "gray";
 };
@@ -386,6 +387,7 @@ export default function AlertsManagement() {
     if (alert.severity === 1 || alert.severity === "critical") severityText = "Critical";
     else if (alert.severity === 2 || alert.severity === "high") severityText = "High";
     else if (alert.severity === 3 || alert.severity === "medium") severityText = "Medium";
+    else if (alert.severity === 4 || alert.severity === "low") severityText = "Low";
     else if (alert.triageLevel) severityText = alert.triageLevel; // Fallback to triageLevel if exists
 
     setUpdateModal({
@@ -402,11 +404,11 @@ export default function AlertsManagement() {
   // Update Alert
   const handleUpdateAlert = async () => {
     // Convert severity text to numeric for storage
-    let severityNumeric = 3; // Default to 3 (Low)
+    let severityNumeric = 3; // Default to 3 (Medium)
     if (updateModal.severity === "Critical") severityNumeric = 1;
     else if (updateModal.severity === "High") severityNumeric = 2;
     else if (updateModal.severity === "Medium") severityNumeric = 3;
-    else if (updateModal.severity === "Low") severityNumeric = 3;
+    else if (updateModal.severity === "Low") severityNumeric = 4;
 
     const metadata = {
       classification: updateModal.classification,
@@ -548,9 +550,10 @@ export default function AlertsManagement() {
   };
 
   const getSeverityLabel = (severity) => {
-    if (severity === 1 || severity === "critical") return "HIGH";
-    if (severity === 2 || severity === "high") return "MEDIUM";
-    if (severity === 3 || severity === "medium") return "LOW";
+    if (severity === 1 || severity === "critical") return "CRITICAL";
+    if (severity === 2 || severity === "high") return "HIGH";
+    if (severity === 3 || severity === "medium") return "MEDIUM";
+    if (severity === 4 || severity === "low") return "LOW";
     return "INFO";
   };
 

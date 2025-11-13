@@ -345,8 +345,9 @@ export default function AlertsManagement() {
   const handleAddTag = (e) => {
     if (e.key === "Enter" && e.target.value.trim()) {
       const newTag = e.target.value.trim();
-      if (!updateModal.tags.includes(newTag)) {
-        setUpdateModal({ ...updateModal, tags: [...updateModal.tags, newTag] });
+      const currentTags = updateModal.tags || [];
+      if (!currentTags.includes(newTag)) {
+        setUpdateModal({ ...updateModal, tags: [...currentTags, newTag] });
       }
       e.target.value = "";
     }
@@ -356,7 +357,7 @@ export default function AlertsManagement() {
   const handleRemoveTag = (tag) => {
     setUpdateModal({
       ...updateModal,
-      tags: updateModal.tags.filter((t) => t !== tag),
+      tags: (updateModal.tags || []).filter((t) => t !== tag),
     });
   };
 
@@ -872,7 +873,7 @@ export default function AlertsManagement() {
                   onKeyDown={handleAddTag}
                 />
                 <HStack mt={2} flexWrap="wrap">
-                  {updateModal.tags.map((tag) => (
+                  {(updateModal.tags || []).map((tag) => (
                     <Tag key={tag} colorScheme="blue" size="md">
                       <TagLabel>{tag}</TagLabel>
                       <TagCloseButton onClick={() => handleRemoveTag(tag)} />

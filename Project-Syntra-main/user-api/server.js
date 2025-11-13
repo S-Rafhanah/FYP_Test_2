@@ -1754,10 +1754,17 @@ app.get('/api/alerts/metadata/:alertId', authorize(['Security Analyst', 'Platfor
       // Parse tags if it's a JSON string
       if (row.tags) {
         try {
-          row.tags = JSON.parse(row.tags);
+          if (typeof row.tags === 'string' && row.tags.trim()) {
+            row.tags = JSON.parse(row.tags);
+          } else if (!row.tags.trim()) {
+            row.tags = [];
+          }
         } catch (e) {
-          // Leave as is if not valid JSON
+          console.warn('[GET /api/alerts/metadata/:alertId] Failed to parse tags:', e.message);
+          row.tags = [];
         }
+      } else {
+        row.tags = [];
       }
 
       res.json(row);
@@ -1780,10 +1787,17 @@ app.get('/api/alerts/metadata', authorize(['Security Analyst', 'Platform Adminis
       const processed = (rows || []).map(row => {
         if (row.tags) {
           try {
-            row.tags = JSON.parse(row.tags);
+            if (typeof row.tags === 'string' && row.tags.trim()) {
+              row.tags = JSON.parse(row.tags);
+            } else if (typeof row.tags === 'string' && !row.tags.trim()) {
+              row.tags = [];
+            }
           } catch (e) {
-            // Leave as is if not valid JSON
+            console.warn('[GET /api/alerts/metadata] Failed to parse tags for alert:', row.alert_id, e.message);
+            row.tags = [];
           }
+        } else {
+          row.tags = [];
         }
         return row;
       });

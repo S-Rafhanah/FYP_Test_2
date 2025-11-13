@@ -172,6 +172,19 @@ export default function AlertsManagement() {
           console.log(`[Load] Suricata alert #${index} ID: ${id.substring(0, 60)} - No metadata`);
         }
 
+        // Safely parse tags from saved metadata
+        let parsedTags = alert.tags || [];
+        if (savedMetadata?.tags) {
+          try {
+            parsedTags = typeof savedMetadata.tags === 'string' && savedMetadata.tags.trim()
+              ? JSON.parse(savedMetadata.tags)
+              : savedMetadata.tags;
+          } catch (e) {
+            console.warn(`Failed to parse tags for alert ${id}:`, e);
+            parsedTags = alert.tags || [];
+          }
+        }
+
         return {
           ...alert,
           id,
@@ -180,7 +193,7 @@ export default function AlertsManagement() {
           severity: alert.alert?.severity || alert.severity || 3,
           classification: savedMetadata?.classification || alert.classification || "Unclassified",
           status: savedMetadata?.status || alert.status || "New",
-          tags: savedMetadata?.tags ? JSON.parse(savedMetadata.tags) : (alert.tags || []),
+          tags: parsedTags,
           triageLevel: savedMetadata?.triageLevel || alert.triageLevel || "Medium",
           notes: savedMetadata?.notes || alert.notes || "",
           archived: savedMetadata?.archived || alert.archived || false,
@@ -194,6 +207,19 @@ export default function AlertsManagement() {
         const id = getUniqueId(baseId);
         const savedMetadata = metadataObj[id] || metadataObj[baseId];
 
+        // Safely parse tags from saved metadata
+        let parsedTags = log.tags || [];
+        if (savedMetadata?.tags) {
+          try {
+            parsedTags = typeof savedMetadata.tags === 'string' && savedMetadata.tags.trim()
+              ? JSON.parse(savedMetadata.tags)
+              : savedMetadata.tags;
+          } catch (e) {
+            console.warn(`Failed to parse tags for log ${id}:`, e);
+            parsedTags = log.tags || [];
+          }
+        }
+
         return {
           ...log,
           id,
@@ -202,7 +228,7 @@ export default function AlertsManagement() {
           severity: 3,
           classification: savedMetadata?.classification || log.classification || "Network Log",
           status: savedMetadata?.status || log.status || "New",
-          tags: savedMetadata?.tags ? JSON.parse(savedMetadata.tags) : (log.tags || []),
+          tags: parsedTags,
           triageLevel: savedMetadata?.triageLevel || log.triageLevel || "Low",
           notes: savedMetadata?.notes || log.notes || "",
           archived: savedMetadata?.archived || log.archived || false,

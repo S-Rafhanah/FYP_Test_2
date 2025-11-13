@@ -18,9 +18,7 @@ import {
   getZeekLogs,
   saveAlertMetadata,
   saveAlertMetadataBulk,
-  getAlert
-
-Metadata,
+  getAlertMetadata,
   getAllAlertMetadata
 } from "../../backend_api";
 import { useAuth } from "../../auth/AuthContext";

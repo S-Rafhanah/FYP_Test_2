@@ -19,6 +19,22 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [accessToken, setAccessToken] = useState(() => {
+    // DEVELOPMENT MODE: Clear auth only on fresh server start (npm start), not on page refresh
+    if (process.env.NODE_ENV === 'development') {
+      // Check if this is the first load of the session
+      const isFirstLoad = !sessionStorage.getItem('session_initialized');
+
+      if (isFirstLoad) {
+        // First load after npm start - clear everything
+        console.log('Development mode: First load - Cleared authentication data');
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("user");
+        sessionStorage.setItem('session_initialized', 'true');
+        return null;
+      }
+      // Subsequent loads - check for valid token
+    }
+
     const token = localStorage.getItem("accessToken");
     // Clear if expired
     if (token && isTokenExpired(token)) {

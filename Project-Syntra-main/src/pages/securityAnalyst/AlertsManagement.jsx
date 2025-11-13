@@ -141,6 +141,11 @@ export default function AlertsManagement() {
         metadataObj[item.alert_id] = item;
       });
 
+      console.log(`[Load] Loaded ${allMetadata?.length || 0} saved alert metadata records from database`);
+      if (allMetadata && allMetadata.length > 0) {
+        console.log(`[Load] Sample IDs from DB:`, allMetadata.slice(0, 3).map(m => m.alert_id.substring(0, 60)));
+      }
+
       // Track IDs to ensure uniqueness within this batch
       const usedIds = new Set();
       const getUniqueId = (baseId) => {
@@ -155,13 +160,16 @@ export default function AlertsManagement() {
       };
 
       // Enrich Suricata alerts with saved metadata from database
-      const enrichedSuricata = (suricata || []).map((alert) => {
+      const enrichedSuricata = (suricata || []).map((alert, index) => {
         const baseId = generateStableAlertId(alert, "Suricata");
         const id = getUniqueId(baseId);
         const savedMetadata = metadataObj[id] || metadataObj[baseId];
 
         if (savedMetadata) {
-          console.log(`📋 Loading saved metadata for Suricata alert: ${id.substring(0, 50)}...`);
+          console.log(`📋 [Load] Suricata alert #${index} ID: ${id.substring(0, 60)} - Found metadata!`);
+        } else if (index < 3) {
+          // Log first 3 alerts for debugging
+          console.log(`[Load] Suricata alert #${index} ID: ${id.substring(0, 60)} - No metadata`);
         }
 
         return {
@@ -390,10 +398,13 @@ export default function AlertsManagement() {
     try {
       // If this is a consolidated alert, save metadata for ALL alerts in the group
       if (updateModal.alert.consolidatedIds && updateModal.alert.consolidatedIds.length > 0) {
+        console.log(`[Save] Consolidated alert - saving ${updateModal.alert.consolidatedIds.length} alerts`);
+        console.log(`[Save] Alert IDs:`, updateModal.alert.consolidatedIds.map(id => id.substring(0, 60)));
         await saveAlertMetadataBulk(updateModal.alert.consolidatedIds, metadata);
         console.log(`✅ Saved metadata for ${updateModal.alert.consolidatedIds.length} consolidated alerts`);
       } else {
         // Single alert - save metadata normally
+        console.log(`[Save] Single alert ID: ${updateModal.alert.id.substring(0, 60)}`);
         await saveAlertMetadata(updateModal.alert.id, metadata);
         console.log(`✅ Saved metadata for alert ID: ${updateModal.alert.id}`);
       }

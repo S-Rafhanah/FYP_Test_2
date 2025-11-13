@@ -1484,21 +1484,11 @@ app.get('/api/health', async (req, res) => {
     uptime: process.uptime(),
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'production',
-    elasticsearch: 'unknown',
     database: 'online',
     timestamp: new Date().toISOString()
   };
 
-  // Check Elasticsearch
-  try {
-    await es.ping();
-    health.elasticsearch = 'online';
-  } catch (err) {
-    health.elasticsearch = 'offline';
-    health.status = 'degraded';
-  }
-
-  // Check database
+  // Check SQLite database
   try {
     await new Promise((resolve, reject) => {
       db.get('SELECT 1', (err) => {
@@ -1521,14 +1511,26 @@ app.get('/api/system/alerts', authorize(['Platform Administrator', 'Security Ana
   const now = new Date();
 
   try {
-    // Check Elasticsearch health
+    // Check SQLite database health
     try {
-      await es.ping();
+      await new Promise((resolve, reject) => {
+        // Test basic connectivity
+        db.get('SELECT 1', (err) => {
+          if (err) return reject(err);
+
+          // Verify core tables exist
+          db.get(`SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users', 'ids_rules', 'profile_types')`, (err, row) => {
+            if (err) reject(err);
+            else if (!row) reject(new Error('Core tables missing'));
+            else resolve();
+          });
+        });
+      });
     } catch (err) {
       alerts.push({
         type: 'Database Health',
         severity: 'critical',
-        message: 'Elasticsearch is not responding',
+        message: 'SQLite database is not responding',
         timestamp: now.toISOString(),
         source: 'Database Monitor'
       });

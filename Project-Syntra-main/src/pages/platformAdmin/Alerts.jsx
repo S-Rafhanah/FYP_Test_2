@@ -126,13 +126,13 @@ export default function Alerts() {
       });
     }
 
-    // Check Elasticsearch
-    if (systemHealth?.elasticsearch !== "online") {
+    // Check SQLite Database
+    if (systemHealth?.database !== "online") {
       alerts.push({
-        id: "es-1",
+        id: "db-1",
         type: "Database Health",
         severity: "critical",
-        message: "Elasticsearch is not responding",
+        message: "SQLite database is not responding",
         timestamp: lastRefresh,
         source: "Database Monitor",
       });
@@ -402,16 +402,16 @@ export default function Alerts() {
                   <Flex justify="space-between" align="center" p={3} bg={headerBg} borderRadius="md">
                     <HStack>
                       <Icon
-                        as={systemHealth?.elasticsearch === "online" ? FiCheckCircle : FiAlertTriangle}
-                        color={systemHealth?.elasticsearch === "online" ? "green.500" : "red.500"}
+                        as={systemHealth?.database === "online" ? FiCheckCircle : FiAlertTriangle}
+                        color={systemHealth?.database === "online" ? "green.500" : "red.500"}
                       />
-                      <Text fontWeight="medium">Elasticsearch</Text>
+                      <Text fontWeight="medium">SQLite Database</Text>
                     </HStack>
                     <Badge
-                      colorScheme={systemHealth?.elasticsearch === "online" ? "green" : "red"}
+                      colorScheme={systemHealth?.database === "online" ? "green" : "red"}
                       fontSize="xs"
                     >
-                      {systemHealth?.elasticsearch || "UNKNOWN"}
+                      {systemHealth?.database || "UNKNOWN"}
                     </Badge>
                   </Flex>
 

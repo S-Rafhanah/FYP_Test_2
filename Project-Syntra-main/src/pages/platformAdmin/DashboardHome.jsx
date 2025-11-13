@@ -304,25 +304,25 @@ export default function DashboardHome() {
               />
             </Box>
 
-            {/* Elasticsearch Status */}
+            {/* SQLite Database Status */}
             <Box>
               <Flex justify="space-between" align="center" mb={2}>
                 <HStack>
                   <Icon
-                    as={systemHealth?.elasticsearch === "online" ? FiCheckCircle : FiAlertCircle}
-                    color={systemHealth?.elasticsearch === "online" ? "green.500" : "gray.400"}
+                    as={systemHealth?.database === "online" ? FiCheckCircle : FiAlertCircle}
+                    color={systemHealth?.database === "online" ? "green.500" : "gray.400"}
                   />
-                  <Text fontWeight="medium">Elasticsearch</Text>
+                  <Text fontWeight="medium">SQLite Database</Text>
                 </HStack>
                 <Badge
-                  colorScheme={systemHealth?.elasticsearch === "online" ? "green" : "gray"}
+                  colorScheme={systemHealth?.database === "online" ? "green" : "gray"}
                   fontSize="xs"
                 >
-                  {systemHealth?.elasticsearch || "UNKNOWN"}
+                  {systemHealth?.database || "UNKNOWN"}
                 </Badge>
               </Flex>
               <Progress
-                value={systemHealth?.elasticsearch === "online" ? 100 : 0}
+                value={systemHealth?.database === "online" ? 100 : 0}
                 size="sm"
                 colorScheme="green"
                 borderRadius="full"

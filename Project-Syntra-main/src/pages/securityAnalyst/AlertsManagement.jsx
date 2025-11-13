@@ -1,5 +1,5 @@
 // src/pages/securityAnalyst/AlertsManagement.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Badge, Box, Button, Flex, HStack, IconButton, Input,
   Modal, ModalBody, ModalCloseButton, ModalContent, ModalFooter,
@@ -7,6 +7,7 @@ import {
   Textarea, Th, Thead, Tr, useColorModeValue, useToast, VStack,
   Icon, InputGroup, InputLeftElement, Tag, TagLabel, TagCloseButton,
   FormControl, FormLabel, Collapse, Tabs, TabList, Tab, TabPanels, TabPanel,
+  Alert, AlertIcon, AlertDescription,
 } from "@chakra-ui/react";
 import {
   FiRefreshCw, FiSearch, FiEdit, FiArchive, FiEye,
@@ -45,6 +46,7 @@ export default function AlertsManagement() {
   const [alertNameFilter, setAlertNameFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
+  const [consolidateAlerts, setConsolidateAlerts] = useState(true); // Default to consolidated view
 
   // Modal State
   const [viewModal, setViewModal] = useState({ isOpen: false, alert: null });
@@ -128,16 +130,20 @@ export default function AlertsManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
-  // Combine all alerts
-  const allAlerts = [...suricataAlerts, ...zeekLogs]
-    .filter(a => !a.archived)
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  // Combine all alerts - memoized for performance
+  const allAlerts = useMemo(() =>
+    [...suricataAlerts, ...zeekLogs]
+      .filter(a => !a.archived)
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+  , [suricataAlerts, zeekLogs]);
 
-  // Get unique alert signatures for filter dropdown
-  const uniqueSignatures = [...new Set(allAlerts.map(a => a.signature))].sort();
+  // Get unique alert signatures for filter dropdown - memoized
+  const uniqueSignatures = useMemo(() =>
+    [...new Set(allAlerts.map(a => a.signature))].sort()
+  , [allAlerts]);
 
-  // Apply filters
-  const filterAlerts = (alerts) => {
+  // Apply filters - memoized for performance
+  const filterAlerts = useCallback((alerts) => {
     let result = alerts.filter(a => !a.archived);
 
     // Search filter
@@ -176,11 +182,84 @@ export default function AlertsManagement() {
     }
 
     return result;
-  };
+  }, [searchTerm, alertNameFilter, severityFilter, statusFilter]);
 
-  const filteredAllAlerts = filterAlerts(allAlerts);
-  const filteredSuricataAlerts = filterAlerts(suricataAlerts.filter(a => !a.archived));
-  const filteredZeekLogs = filterAlerts(zeekLogs.filter(a => !a.archived));
+  // Consolidate alerts - group similar alerts within 5-minute window
+  const consolidateAlertsList = useCallback((alerts) => {
+    if (!consolidateAlerts) return alerts;
+
+    const TIME_WINDOW = 5 * 60 * 1000; // 5 minutes in milliseconds
+    const groups = new Map();
+
+    alerts.forEach(alert => {
+      const srcIp = alert.src_ip || alert["id.orig_h"] || "unknown";
+      const destIp = alert.dest_ip || alert["id.resp_h"] || "unknown";
+      const signature = alert.signature || "Unknown";
+
+      // Create group key
+      const groupKey = `${signature}|${srcIp}|${destIp}`;
+
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, []);
+      }
+      groups.get(groupKey).push(alert);
+    });
+
+    // Consolidate each group
+    const consolidated = [];
+    groups.forEach((groupAlerts) => {
+      // Sort by timestamp
+      groupAlerts.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+      // Check if alerts are within time window
+      const subgroups = [];
+      let currentSubgroup = [groupAlerts[0]];
+
+      for (let i = 1; i < groupAlerts.length; i++) {
+        const prevTime = new Date(groupAlerts[i - 1].timestamp).getTime();
+        const currTime = new Date(groupAlerts[i].timestamp).getTime();
+
+        if (currTime - prevTime <= TIME_WINDOW) {
+          currentSubgroup.push(groupAlerts[i]);
+        } else {
+          subgroups.push(currentSubgroup);
+          currentSubgroup = [groupAlerts[i]];
+        }
+      }
+      subgroups.push(currentSubgroup);
+
+      // Create consolidated alert for each subgroup
+      subgroups.forEach(subgroup => {
+        const firstAlert = subgroup[0];
+        const lastAlert = subgroup[subgroup.length - 1];
+
+        consolidated.push({
+          ...lastAlert, // Use latest alert as base
+          id: firstAlert.id, // Use first alert's ID for metadata
+          count: subgroup.length,
+          firstSeen: firstAlert.timestamp,
+          lastSeen: lastAlert.timestamp,
+          consolidatedIds: subgroup.map(a => a.id), // Track all IDs in group
+        });
+      });
+    });
+
+    // Sort by last seen (most recent first)
+    return consolidated.sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen));
+  }, [consolidateAlerts]);
+
+  const filteredAllAlerts = useMemo(() =>
+    consolidateAlertsList(filterAlerts(allAlerts)),
+    [consolidateAlertsList, filterAlerts, allAlerts]
+  );
+  const filteredSuricataAlerts = useMemo(() =>
+    consolidateAlertsList(filterAlerts(suricataAlerts.filter(a => !a.archived))),
+    [consolidateAlertsList, filterAlerts, suricataAlerts]
+  );
+  const filteredZeekLogs = useMemo(() =>
+    consolidateAlertsList(filterAlerts(zeekLogs.filter(a => !a.archived))),
+    [consolidateAlertsList, filterAlerts, zeekLogs]
+  );
 
   // View Alert Details
   const handleViewAlert = (alert) => {
@@ -296,6 +375,7 @@ export default function AlertsManagement() {
           <Th>Timestamp</Th>
           {showSource && <Th>Source</Th>}
           <Th>Alert Name</Th>
+          <Th>Hits</Th>
           <Th>Source IP</Th>
           <Th>Dest IP</Th>
           <Th>Severity</Th>
@@ -309,7 +389,14 @@ export default function AlertsManagement() {
           alerts.map((alert) => (
             <Tr key={alert.id}>
               <Td fontSize="sm" whiteSpace="nowrap">
-                {new Date(alert.timestamp).toLocaleString()}
+                {alert.count > 1 ? (
+                  <VStack align="start" spacing={0}>
+                    <Text fontSize="xs" opacity={0.7}>First: {new Date(alert.firstSeen).toLocaleString()}</Text>
+                    <Text fontSize="xs" opacity={0.7}>Last: {new Date(alert.lastSeen).toLocaleString()}</Text>
+                  </VStack>
+                ) : (
+                  new Date(alert.timestamp).toLocaleString()
+                )}
               </Td>
               {showSource && (
                 <Td>
@@ -323,6 +410,15 @@ export default function AlertsManagement() {
               )}
               <Td fontSize="sm" maxW="250px" isTruncated fontWeight="medium">
                 {alert.signature}
+              </Td>
+              <Td>
+                <Badge
+                  colorScheme={alert.count > 1 ? "purple" : "gray"}
+                  fontSize="sm"
+                  fontWeight="bold"
+                >
+                  {alert.count || 1}
+                </Badge>
               </Td>
               <Td fontSize="sm">
                 {alert.src_ip || alert["id.orig_h"] || "N/A"}
@@ -383,7 +479,7 @@ export default function AlertsManagement() {
           ))
         ) : (
           <Tr>
-            <Td colSpan={showSource ? 9 : 8} textAlign="center" py={8} color="gray.500">
+            <Td colSpan={showSource ? 10 : 9} textAlign="center" py={8} color="gray.500">
               No alerts found
             </Td>
           </Tr>
@@ -395,12 +491,20 @@ export default function AlertsManagement() {
   return (
     <Box>
       {/* Header */}
-      <Flex gap={3} align="center" mb={6}>
+      <Flex gap={3} align="center" mb={4}>
         <Text fontSize="2xl" fontWeight="bold">
           Alerts Management
         </Text>
         <HStack ms="auto" spacing={2}>
-          <Text fontSize="xs" color="gray.500">
+          <Button
+            size="sm"
+            onClick={() => setConsolidateAlerts(!consolidateAlerts)}
+            colorScheme={consolidateAlerts ? "brand" : "gray"}
+            variant={consolidateAlerts ? "solid" : "outline"}
+          >
+            {consolidateAlerts ? "Consolidated" : "Raw Logs"}
+          </Button>
+          <Text fontSize="xs" color="gray.500" whiteSpace="nowrap">
             Last updated: {lastRefresh.toLocaleTimeString()}
           </Text>
           <IconButton
@@ -419,6 +523,22 @@ export default function AlertsManagement() {
           />
         </HStack>
       </Flex>
+
+      {/* Consolidated Alerts Info */}
+      <Alert status="info" borderRadius="md" mb={4} fontSize="sm">
+        <AlertIcon />
+        <Box>
+          <AlertDescription>
+            <strong>SIEM-Style Alert Consolidation:</strong> {consolidateAlerts ? (
+              <>Similar alerts (same signature, IPs) within 5 minutes are grouped together.
+              The count badge shows how many events occurred. Toggle to "Raw Logs" to see individual packets.</>
+            ) : (
+              <>Viewing raw IDS/Network logs - each packet is shown separately.
+              Toggle to "Consolidated" to group similar alerts together (recommended for most analysis).</>
+            )}
+          </AlertDescription>
+        </Box>
+      </Alert>
 
       {/* Search Bar */}
       <Box mb={4}>

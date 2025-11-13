@@ -1,5 +1,5 @@
 {
-  "abuseipdb_api_key": "YOUR_API_KEY_HERE",
+  "abuseipdb_api_key": "e618238158897f414b8babd47796198683ec12cac82e20e8ba45d5b7616125c3c47666c8574c1f2d",
   "target_ip": "192.168.56.128",
   "target_ports": [80, 443, 22, 3000, 5001],
   "attack_settings": {

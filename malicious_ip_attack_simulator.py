@@ -13,7 +13,7 @@ import sys
 from datetime import datetime
 
 # Configuration
-ABUSEIPDB_API_KEY = "YOUR_API_KEY_HERE"  # Replace with your actual API key
+ABUSEIPDB_API_KEY = "e618238158897f414b8babd47796198683ec12cac82e20e8ba45d5b7616125c3c47666c8574c1f2d"  # Replace with your actual API key
 TARGET_IP = "192.168.56.128"  # Your target server
 TARGET_PORT = 80
 

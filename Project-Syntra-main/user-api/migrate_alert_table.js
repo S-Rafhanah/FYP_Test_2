@@ -1,14 +1,20 @@
-// Migration script to recreate alert_metadata table without affecting other tables
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+import sqlite3 from 'sqlite3';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const dbPath = path.join(__dirname, 'users.db');
-const db = new sqlite3.Database(dbPath);
+const sqlite3Verbose = sqlite3.verbose();
+const db = new sqlite3Verbose.Database(dbPath);
 
 console.log('🔄 Starting alert_metadata table migration...');
+console.log('📁 Database path:', dbPath);
 
 db.serialize(() => {
-  // Drop the existing alert_metadata table
+  // Drop existing alert_metadata table
   db.run('DROP TABLE IF EXISTS alert_metadata', (err) => {
     if (err) {
       console.error('❌ Error dropping alert_metadata table:', err);
@@ -17,7 +23,7 @@ db.serialize(() => {
     }
   });
 
-  // Recreate the table with correct schema
+  // Create alert_metadata table with correct schema
   db.run(`
     CREATE TABLE IF NOT EXISTS alert_metadata (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,13 +47,6 @@ db.serialize(() => {
       console.log('✅ Migration complete! Your users and configurations are preserved.');
     }
 
-    // Close the database connection
-    db.close((err) => {
-      if (err) {
-        console.error('Error closing database:', err);
-      } else {
-        console.log('🎉 Database migration finished successfully!');
-      }
-    });
+    db.close();
   });
 });

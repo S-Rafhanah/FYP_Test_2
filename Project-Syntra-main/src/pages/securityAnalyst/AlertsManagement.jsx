@@ -113,6 +113,7 @@ export default function AlertsManagement() {
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [consolidateAlerts, setConsolidateAlerts] = useState(true); // Default to consolidated view
+  const [alertLimit, setAlertLimit] = useState(50); // Default to 50 for better performance
 
   // Modal State
   const [viewModal, setViewModal] = useState({ isOpen: false, alert: null });
@@ -142,8 +143,8 @@ export default function AlertsManagement() {
 
       // Fetch alerts and saved metadata in parallel
       const [suricata, zeek, allMetadata] = await Promise.all([
-        getSuricataAlerts(200).catch(() => []),
-        getZeekLogs(200).catch(() => []),
+        getSuricataAlerts(alertLimit).catch(() => []),
+        getZeekLogs(alertLimit).catch(() => []),
         getAllAlertMetadata().catch(() => [])
       ]);
 
@@ -222,7 +223,7 @@ export default function AlertsManagement() {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, toast]);
+  }, [isAuthenticated, toast, alertLimit]);
 
   useEffect(() => {
     fetchAlerts();
@@ -650,6 +651,17 @@ export default function AlertsManagement() {
           >
             {consolidateAlerts ? "Consolidated" : "Raw Logs"}
           </Button>
+          <Select
+            size="sm"
+            width="120px"
+            value={alertLimit}
+            onChange={(e) => setAlertLimit(Number(e.target.value))}
+          >
+            <option value={50}>50 Logs</option>
+            <option value={100}>100 Logs</option>
+            <option value={150}>150 Logs</option>
+            <option value={200}>200 Logs</option>
+          </Select>
           <Text fontSize="xs" color="gray.500">
             Last updated: {lastRefresh.toLocaleTimeString()}
           </Text>

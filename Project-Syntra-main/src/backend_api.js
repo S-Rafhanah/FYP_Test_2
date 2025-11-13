@@ -353,3 +353,29 @@ export async function getAllAlertMetadata() {
 
   return res.json();
 }
+
+// Delete all IDS logs from Elasticsearch
+export async function deleteIDSLogs() {
+  const res = await fetch(`${API}/api/ids-logs`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeader() }
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// Delete all alert metadata from SQLite
+export async function deleteAlertMetadata() {
+  const res = await fetch(`${API}/api/alert-metadata`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeader() }
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}

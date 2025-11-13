@@ -11,7 +11,7 @@ import {
 } from "@chakra-ui/react";
 import {
   FiRefreshCw, FiSearch, FiEdit, FiArchive, FiEye,
-  FiFilter, FiX,
+  FiFilter, FiX, FiTrash2,
 } from "react-icons/fi";
 import {
   getSuricataAlerts,
@@ -19,7 +19,9 @@ import {
   saveAlertMetadata,
   saveAlertMetadataBulk,
   getAlertMetadata,
-  getAllAlertMetadata
+  getAllAlertMetadata,
+  deleteIDSLogs,
+  deleteAlertMetadata
 } from "../../backend_api";
 import { useAuth } from "../../auth/AuthContext";
 
@@ -251,6 +253,42 @@ export default function AlertsManagement() {
       setLoading(false);
     }
   }, [isAuthenticated, toast, alertLimit]);
+
+  const handleDeleteLogs = async () => {
+    if (!window.confirm('Are you sure you want to delete ALL IDS logs? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Delete logs from Elasticsearch and metadata from SQLite
+      const [logsResult, metadataResult] = await Promise.all([
+        deleteIDSLogs(),
+        deleteAlertMetadata()
+      ]);
+
+      toast({
+        title: "IDS Logs Deleted",
+        description: `Deleted ${logsResult.deleted?.total || 0} logs and ${metadataResult.deleted || 0} metadata records`,
+        status: "success",
+        duration: 4000,
+      });
+
+      // Refresh the alerts list
+      await fetchAlerts();
+    } catch (err) {
+      console.error("Failed to delete logs:", err);
+      toast({
+        title: "Failed to delete logs",
+        description: err.message,
+        status: "error",
+        duration: 4000,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchAlerts();
@@ -723,6 +761,14 @@ export default function AlertsManagement() {
             size="sm"
             isLoading={loading}
             onClick={fetchAlerts}
+          />
+          <IconButton
+            aria-label="Delete All Logs"
+            icon={<FiTrash2 />}
+            size="sm"
+            colorScheme="red"
+            isLoading={loading}
+            onClick={handleDeleteLogs}
           />
         </HStack>
       </Flex>

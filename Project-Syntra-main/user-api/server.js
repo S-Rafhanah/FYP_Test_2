@@ -1023,6 +1023,90 @@ app.get(
   }
 );
 
+// DELETE all IDS logs from Elasticsearch
+app.delete(
+  '/api/ids-logs',
+  authorize(['Platform Administrator', 'Security Analyst', 'Network Administrator']),
+  async (req, res) => {
+    try {
+      console.log('[DELETE /api/ids-logs] Deleting all IDS logs from Elasticsearch...');
+
+      // Delete Suricata alerts
+      const suricataResult = await es.deleteByQuery({
+        index: ["filebeat-*", ".ds-filebeat-*"],
+        body: {
+          query: {
+            bool: {
+              must: [
+                { match: { "event.module": "suricata" } }
+              ],
+              filter: [
+                { exists: { field: "suricata.eve.alert.signature" } }
+              ]
+            }
+          }
+        },
+        refresh: true,
+        conflicts: 'proceed'
+      });
+
+      // Delete Zeek logs
+      const zeekResult = await es.deleteByQuery({
+        index: ["filebeat-*", ".ds-filebeat-*"],
+        body: {
+          query: {
+            match: { "event.module": "zeek" }
+          }
+        },
+        refresh: true,
+        conflicts: 'proceed'
+      });
+
+      console.log('[DELETE /api/ids-logs] Suricata logs deleted:', suricataResult.deleted);
+      console.log('[DELETE /api/ids-logs] Zeek logs deleted:', zeekResult.deleted);
+
+      res.json({
+        success: true,
+        message: 'IDS logs deleted successfully',
+        deleted: {
+          suricata: suricataResult.deleted || 0,
+          zeek: zeekResult.deleted || 0,
+          total: (suricataResult.deleted || 0) + (zeekResult.deleted || 0)
+        }
+      });
+    } catch (err) {
+      console.error('[DELETE /api/ids-logs] Error:', err?.meta?.body || err);
+      res.status(500).json({
+        error: 'Failed to delete IDS logs',
+        details: err?.meta?.body?.error?.reason || err.message
+      });
+    }
+  }
+);
+
+// DELETE all alert metadata from SQLite
+app.delete(
+  '/api/alert-metadata',
+  authorize(['Platform Administrator', 'Security Analyst']),
+  (req, res) => {
+    const sql = `DELETE FROM alert_metadata`;
+
+    db.run(sql, [], function(err) {
+      if (err) {
+        console.error('[DELETE /api/alert-metadata] Error:', err);
+        return res.status(500).json({ error: 'Failed to delete alert metadata' });
+      }
+
+      console.log(`[DELETE /api/alert-metadata] Deleted ${this.changes} metadata records`);
+      res.json({
+        success: true,
+        message: 'Alert metadata deleted successfully',
+        deleted: this.changes
+      });
+    });
+  }
+);
+
 // =========================================================
 // NOTIFICATION MANAGEMENT APIs
 // =========================================================

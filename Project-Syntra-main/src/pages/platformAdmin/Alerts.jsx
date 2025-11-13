@@ -18,7 +18,7 @@ import {
   FiHardDrive,
   FiActivity,
 } from "react-icons/fi";
-import { getSystemHealth, getIDSHealth, getUsers, getSystemAlerts } from "../../backend_api";
+import { getSystemHealth, getComponentHealth, getUsers, getSystemAlerts } from "../../backend_api";
 import { useAuth } from "../../auth/AuthContext";
 
 // Alert severity badge
@@ -53,7 +53,7 @@ export default function Alerts() {
       setLoading(true);
       const [health, ids, users, alerts] = await Promise.all([
         getSystemHealth().catch(() => ({ status: "unknown" })),
-        getIDSHealth().catch(() => ({ suricata: "unknown", zeek: "unknown" })),
+        getComponentHealth().catch(() => ({ suricata: "unknown", zeek: "unknown", database: "unknown" })),
         getUsers().catch(() => []),
         getSystemAlerts().catch(() => []),
       ]);
@@ -123,6 +123,18 @@ export default function Alerts() {
         message: "Zeek Network Monitor is not responding",
         timestamp: lastRefresh,
         source: "IDS Monitor",
+      });
+    }
+
+    // Check SQLite Database
+    if (idsHealth?.database !== "online") {
+      alerts.push({
+        id: "db-1",
+        type: "Database Health",
+        severity: "critical",
+        message: "SQLite database is not responding",
+        timestamp: lastRefresh,
+        source: "Database Monitor",
       });
     }
 
@@ -418,16 +430,16 @@ export default function Alerts() {
                   <Flex justify="space-between" align="center" p={3} bg={headerBg} borderRadius="md">
                     <HStack>
                       <Icon
-                        as={systemHealth?.database === "online" ? FiCheckCircle : FiAlertTriangle}
-                        color={systemHealth?.database === "online" ? "green.500" : "orange.500"}
+                        as={idsHealth?.database === "online" ? FiCheckCircle : FiAlertTriangle}
+                        color={idsHealth?.database === "online" ? "green.500" : "red.500"}
                       />
-                      <Text fontWeight="medium">User Database</Text>
+                      <Text fontWeight="medium">SQLite Database</Text>
                     </HStack>
                     <Badge
-                      colorScheme={systemHealth?.database === "online" ? "green" : "orange"}
+                      colorScheme={idsHealth?.database === "online" ? "green" : "red"}
                       fontSize="xs"
                     >
-                      {systemHealth?.database || "ONLINE"}
+                      {idsHealth?.database || "UNKNOWN"}
                     </Badge>
                   </Flex>
                 </VStack>

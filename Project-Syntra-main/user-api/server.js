@@ -1477,6 +1477,87 @@ app.get('/api/health/ids', authorize(['Platform Administrator', 'Security Analys
   }
 });
 
+// GET /api/health/components - Get health status of all system components
+app.get('/api/health/components', authorize(['Platform Administrator', 'Security Analyst']), async (req, res) => {
+  const components = {
+    suricata: 'unknown',
+    zeek: 'unknown',
+    database: 'unknown',
+    lastCheck: new Date().toISOString()
+  };
+
+  // Check SQLite database health
+  try {
+    await new Promise((resolve, reject) => {
+      db.get('SELECT 1 as test', [], (err, row) => {
+        if (err) {
+          console.error('[Component Health] SQLite error:', err);
+          reject(err);
+        } else if (!row || row.test !== 1) {
+          reject(new Error('Invalid response'));
+        } else {
+          resolve();
+        }
+      });
+    });
+    components.database = 'online';
+    console.log('[Component Health] SQLite: online');
+  } catch (err) {
+    console.error('[Component Health] SQLite: offline -', err.message);
+    components.database = 'offline';
+  }
+
+  // Check Suricata status
+  try {
+    const suricataCheck = await es.search({
+      index: ['filebeat-*', '.ds-filebeat-*'],
+      size: 1,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          must: [{ match: { 'event.module': 'suricata' } }],
+          filter: [{ range: { '@timestamp': { gte: 'now-10m' } } }]
+        }
+      }
+    }).catch(() => null);
+
+    if (suricataCheck && suricataCheck.hits?.hits?.length > 0) {
+      components.suricata = 'online';
+    } else {
+      components.suricata = 'offline';
+    }
+  } catch (err) {
+    console.error('[Component Health] Suricata check error:', err);
+    components.suricata = 'offline';
+  }
+
+  // Check Zeek status
+  try {
+    const zeekCheck = await es.search({
+      index: ['filebeat-*', '.ds-filebeat-*'],
+      size: 1,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          must: [{ match: { 'event.module': 'zeek' } }],
+          filter: [{ range: { '@timestamp': { gte: 'now-10m' } } }]
+        }
+      }
+    }).catch(() => null);
+
+    if (zeekCheck && zeekCheck.hits?.hits?.length > 0) {
+      components.zeek = 'online';
+    } else {
+      components.zeek = 'offline';
+    }
+  } catch (err) {
+    console.error('[Component Health] Zeek check error:', err);
+    components.zeek = 'offline';
+  }
+
+  res.json(components);
+});
+
 // Enhanced GET /api/health - System health with detailed info
 app.get('/api/health', async (req, res) => {
   const health = {
@@ -1521,14 +1602,27 @@ app.get('/api/system/alerts', authorize(['Platform Administrator', 'Security Ana
   const now = new Date();
 
   try {
-    // Check Elasticsearch health
+    // Check SQLite database health
     try {
-      await es.ping();
+      await new Promise((resolve, reject) => {
+        db.get('SELECT 1 as test', [], (err, row) => {
+          if (err) {
+            console.error('[System Alerts] SQLite check failed:', err);
+            reject(err);
+          } else if (!row || row.test !== 1) {
+            reject(new Error('Invalid SQLite response'));
+          } else {
+            resolve();
+          }
+        });
+      });
+      console.log('[System Alerts] SQLite database is healthy');
     } catch (err) {
+      console.error('[System Alerts] SQLite database error:', err);
       alerts.push({
         type: 'Database Health',
         severity: 'critical',
-        message: 'Elasticsearch is not responding',
+        message: 'SQLite database is not responding',
         timestamp: now.toISOString(),
         source: 'Database Monitor'
       });

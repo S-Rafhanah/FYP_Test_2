@@ -91,12 +91,12 @@ export default function Alerts() {
   const generateHealthAlerts = () => {
     const alerts = [];
 
-    // Check overall system health
-    if (systemHealth?.status === "degraded" || systemHealth?.status === "offline") {
+    // Check overall system health (only alert if critical or offline)
+    if (systemHealth?.status === "critical" || systemHealth?.status === "offline") {
       alerts.push({
         id: "sys-1",
         type: "System Health",
-        severity: systemHealth?.status === "offline" ? "critical" : "high",
+        severity: "critical",
         message: `System status is ${systemHealth?.status}`,
         timestamp: lastRefresh,
         source: "System Monitor",
@@ -133,18 +133,6 @@ export default function Alerts() {
         type: "Database Health",
         severity: "critical",
         message: "SQLite database is not responding",
-        timestamp: lastRefresh,
-        source: "Database Monitor",
-      });
-    }
-
-    // Check Elasticsearch
-    if (systemHealth?.elasticsearch !== "online") {
-      alerts.push({
-        id: "es-1",
-        type: "Database Health",
-        severity: "critical",
-        message: "Elasticsearch is not responding",
         timestamp: lastRefresh,
         source: "Database Monitor",
       });
@@ -201,9 +189,12 @@ export default function Alerts() {
             <Stat>
               <StatLabel fontSize="sm" color="gray.500">System Status</StatLabel>
               <StatNumber fontSize="lg" fontWeight="bold" color={
-                systemHealth?.status === "healthy" ? "green.500" : "orange.500"
+                systemHealth?.status === "healthy" ? "green.500" :
+                systemHealth?.status === "critical" ? "red.500" : "orange.500"
               }>
-                {systemHealth?.status || "Unknown"}
+                {systemHealth?.status === "healthy" ? "Operational" :
+                 systemHealth?.status === "critical" ? "Critical" :
+                 systemHealth?.status || "Operational"}
               </StatNumber>
             </Stat>
             <Icon as={FiServer} w={8} h={8} color="blue.500" />
@@ -405,28 +396,12 @@ export default function Alerts() {
                 </VStack>
               </Box>
 
-              {/* Database & Storage */}
+              {/* Database Status */}
               <Box bg={cardBg} borderWidth="1px" borderColor={border} borderRadius="16px" p={5}>
                 <Text fontSize="lg" fontWeight="semibold" mb={4}>
-                  Database & Storage
+                  Database Status
                 </Text>
                 <VStack spacing={4} align="stretch">
-                  <Flex justify="space-between" align="center" p={3} bg={headerBg} borderRadius="md">
-                    <HStack>
-                      <Icon
-                        as={systemHealth?.elasticsearch === "online" ? FiCheckCircle : FiAlertTriangle}
-                        color={systemHealth?.elasticsearch === "online" ? "green.500" : "red.500"}
-                      />
-                      <Text fontWeight="medium">Elasticsearch</Text>
-                    </HStack>
-                    <Badge
-                      colorScheme={systemHealth?.elasticsearch === "online" ? "green" : "red"}
-                      fontSize="xs"
-                    >
-                      {systemHealth?.elasticsearch || "UNKNOWN"}
-                    </Badge>
-                  </Flex>
-
                   <Flex justify="space-between" align="center" p={3} bg={headerBg} borderRadius="md">
                     <HStack>
                       <Icon

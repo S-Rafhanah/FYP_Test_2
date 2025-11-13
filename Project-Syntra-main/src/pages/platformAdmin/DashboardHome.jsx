@@ -328,31 +328,6 @@ export default function DashboardHome() {
                 borderRadius="full"
               />
             </Box>
-
-            {/* Elasticsearch Status */}
-            <Box>
-              <Flex justify="space-between" align="center" mb={2}>
-                <HStack>
-                  <Icon
-                    as={systemHealth?.elasticsearch === "online" ? FiCheckCircle : FiAlertCircle}
-                    color={systemHealth?.elasticsearch === "online" ? "green.500" : "gray.400"}
-                  />
-                  <Text fontWeight="medium">Elasticsearch</Text>
-                </HStack>
-                <Badge
-                  colorScheme={systemHealth?.elasticsearch === "online" ? "green" : "gray"}
-                  fontSize="xs"
-                >
-                  {systemHealth?.elasticsearch || "UNKNOWN"}
-                </Badge>
-              </Flex>
-              <Progress
-                value={systemHealth?.elasticsearch === "online" ? 100 : 0}
-                size="sm"
-                colorScheme="green"
-                borderRadius="full"
-              />
-            </Box>
           </VStack>
         </Box>
 

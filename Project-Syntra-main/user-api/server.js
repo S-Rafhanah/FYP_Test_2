@@ -52,8 +52,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Tiny health endpoints
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'user-api' }));
+// Elasticsearch health check endpoint
 app.get('/api/health/es', async (req, res) => {
   try {
     const info = await es.info();
@@ -1565,30 +1564,29 @@ app.get('/api/health', async (req, res) => {
     uptime: process.uptime(),
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'production',
-    elasticsearch: 'unknown',
     database: 'online',
     timestamp: new Date().toISOString()
   };
 
-  // Check Elasticsearch
-  try {
-    await es.ping();
-    health.elasticsearch = 'online';
-  } catch (err) {
-    health.elasticsearch = 'offline';
-    health.status = 'degraded';
-  }
-
-  // Check database
+  // Check SQLite database
   try {
     await new Promise((resolve, reject) => {
-      db.get('SELECT 1', (err) => {
-        if (err) reject(err);
-        else resolve();
+      db.get('SELECT 1 as test', [], (err, row) => {
+        if (err) {
+          console.error('[System Health] SQLite check failed:', err);
+          reject(err);
+        } else if (!row || row.test !== 1) {
+          reject(new Error('Invalid SQLite response'));
+        } else {
+          resolve();
+        }
       });
     });
     health.database = 'online';
+    health.status = 'healthy';
+    console.log('[System Health] SQLite database is healthy');
   } catch (err) {
+    console.error('[System Health] SQLite database error:', err);
     health.database = 'offline';
     health.status = 'critical';
   }

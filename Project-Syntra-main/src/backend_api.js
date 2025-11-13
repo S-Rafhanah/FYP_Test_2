@@ -241,8 +241,20 @@ export async function saveAlertMetadata(alertId, metadata) {
     body: JSON.stringify({ alertId, ...metadata })
   });
   if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || `HTTP ${res.status}`);
+    let errorMsg = `HTTP ${res.status}`;
+    try {
+      const error = await res.json();
+      errorMsg = error.error || errorMsg;
+    } catch (e) {
+      // Response is not JSON (likely HTML error page)
+      const text = await res.text();
+      if (res.status === 404) {
+        errorMsg = "API endpoint /api/alerts/metadata not found. Please ensure backend endpoints are implemented.";
+      } else {
+        errorMsg = `Server error: ${res.status}`;
+      }
+    }
+    throw new Error(errorMsg);
   }
   return res.json();
 }
@@ -257,8 +269,18 @@ export async function saveAlertMetadataBulk(alertIds, metadata) {
     body: JSON.stringify({ alertIds, ...metadata })
   });
   if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || `HTTP ${res.status}`);
+    let errorMsg = `HTTP ${res.status}`;
+    try {
+      const error = await res.json();
+      errorMsg = error.error || errorMsg;
+    } catch (e) {
+      if (res.status === 404) {
+        errorMsg = "API endpoint /api/alerts/metadata/bulk not found. Please ensure backend endpoints are implemented.";
+      } else {
+        errorMsg = `Server error: ${res.status}`;
+      }
+    }
+    throw new Error(errorMsg);
   }
   return res.json();
 }
@@ -275,9 +297,20 @@ export async function getAlertMetadata(alertId) {
 }
 
 export async function getAllAlertMetadata() {
-  const res = await fetch(`${API}/api/alerts/metadata`, {
-    headers: { ...getAuthHeader() }
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(`${API}/api/alerts/metadata`, {
+      headers: { ...getAuthHeader() }
+    });
+    if (!res.ok) {
+      if (res.status === 404) {
+        console.warn("Alert metadata endpoint not found - metadata will not persist");
+        return []; // Return empty array if endpoint doesn't exist
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return res.json();
+  } catch (error) {
+    console.warn("Failed to fetch alert metadata:", error.message);
+    return []; // Return empty array on error so app continues to work
+  }
 }

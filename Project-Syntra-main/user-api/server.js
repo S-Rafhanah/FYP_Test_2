@@ -198,6 +198,27 @@ db.run(`
   else console.log('✅ Dashboard Layouts table ready');
 });
 
+// Alert Metadata table - stores analyst annotations for alerts
+db.run(`
+  CREATE TABLE IF NOT EXISTS alert_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id TEXT NOT NULL UNIQUE,
+    classification TEXT,
+    status TEXT,
+    tags TEXT,
+    triageLevel TEXT,
+    notes TEXT,
+    severity INTEGER,
+    archived INTEGER DEFAULT 0,
+    archiveReason TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+  )
+`, (err) => {
+  if (err) console.error('Error creating alert_metadata table:', err);
+  else console.log('✅ Alert Metadata table ready');
+});
+
 // JWT-based RBAC middleware
 function authorize(roles = []) {
   return (req, res, next) => {
@@ -1574,6 +1595,169 @@ app.get('/api/users/recent', authorize(['Platform Administrator', 'Security Anal
         return res.status(500).json({ error: err.message });
       }
       res.json(rows || []);
+    }
+  );
+});
+
+// ==================== Alert Metadata Endpoints ====================
+// These endpoints allow Security Analysts to save and retrieve alert annotations
+
+// POST /api/alerts/metadata - Save or update metadata for a single alert
+app.post('/api/alerts/metadata', authorize(['Security Analyst', 'Platform Administrator']), (req, res) => {
+  const { alertId, classification, status, tags, triageLevel, notes, severity, archived, archiveReason } = req.body;
+
+  if (!alertId) {
+    return res.status(400).json({ error: 'alertId is required' });
+  }
+
+  const now = new Date().toISOString();
+  const tagsJson = Array.isArray(tags) ? JSON.stringify(tags) : tags;
+
+  // Use INSERT OR REPLACE to update if exists, insert if not
+  db.run(`
+    INSERT OR REPLACE INTO alert_metadata
+    (alert_id, classification, status, tags, triageLevel, notes, severity, archived, archiveReason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+      COALESCE((SELECT created_at FROM alert_metadata WHERE alert_id = ?), ?),
+      ?)
+  `, [
+    alertId,
+    classification,
+    status,
+    tagsJson,
+    triageLevel,
+    notes,
+    severity,
+    archived ? 1 : 0,
+    archiveReason,
+    alertId, // for COALESCE subquery
+    now,     // created_at if new
+    now      // updated_at
+  ], function(err) {
+    if (err) {
+      console.error('[POST /api/alerts/metadata] DB error:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    console.log(`✅ Saved metadata for alert: ${alertId}`);
+    res.json({ success: true, alertId, rowsAffected: this.changes });
+  });
+});
+
+// POST /api/alerts/metadata/bulk - Save metadata for multiple alerts
+app.post('/api/alerts/metadata/bulk', authorize(['Security Analyst', 'Platform Administrator']), (req, res) => {
+  const { alertIds, classification, status, tags, triageLevel, notes, severity, archived, archiveReason } = req.body;
+
+  if (!Array.isArray(alertIds) || alertIds.length === 0) {
+    return res.status(400).json({ error: 'alertIds array is required' });
+  }
+
+  const now = new Date().toISOString();
+  const tagsJson = Array.isArray(tags) ? JSON.stringify(tags) : tags;
+
+  // Use a transaction to save all alerts
+  db.serialize(() => {
+    db.run('BEGIN TRANSACTION');
+
+    let completed = 0;
+    let errors = [];
+
+    alertIds.forEach((alertId, index) => {
+      db.run(`
+        INSERT OR REPLACE INTO alert_metadata
+        (alert_id, classification, status, tags, triageLevel, notes, severity, archived, archiveReason, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+          COALESCE((SELECT created_at FROM alert_metadata WHERE alert_id = ?), ?),
+          ?)
+      `, [
+        alertId,
+        classification,
+        status,
+        tagsJson,
+        triageLevel,
+        notes,
+        severity,
+        archived ? 1 : 0,
+        archiveReason,
+        alertId,
+        now,
+        now
+      ], function(err) {
+        if (err) {
+          errors.push({ alertId, error: err.message });
+        }
+        completed++;
+
+        // When all are done, commit or rollback
+        if (completed === alertIds.length) {
+          if (errors.length > 0) {
+            db.run('ROLLBACK');
+            console.error('[POST /api/alerts/metadata/bulk] Errors:', errors);
+            return res.status(500).json({ error: 'Failed to save some alerts', errors });
+          } else {
+            db.run('COMMIT');
+            console.log(`✅ Saved metadata for ${alertIds.length} alerts`);
+            return res.json({ success: true, count: alertIds.length });
+          }
+        }
+      });
+    });
+  });
+});
+
+// GET /api/alerts/metadata/:alertId - Get metadata for a specific alert
+app.get('/api/alerts/metadata/:alertId', authorize(['Security Analyst', 'Platform Administrator']), (req, res) => {
+  const { alertId } = req.params;
+
+  db.get(
+    `SELECT * FROM alert_metadata WHERE alert_id = ?`,
+    [alertId],
+    (err, row) => {
+      if (err) {
+        console.error('[GET /api/alerts/metadata/:alertId] DB error:', err);
+        return res.status(500).json({ error: err.message });
+      }
+      if (!row) {
+        return res.status(404).json({ error: 'Metadata not found' });
+      }
+
+      // Parse tags JSON back to array
+      if (row.tags) {
+        try {
+          row.tags = JSON.parse(row.tags);
+        } catch (e) {
+          row.tags = [];
+        }
+      }
+
+      res.json(row);
+    }
+  );
+});
+
+// GET /api/alerts/metadata - Get all alert metadata
+app.get('/api/alerts/metadata', authorize(['Security Analyst', 'Platform Administrator']), (req, res) => {
+  db.all(
+    `SELECT * FROM alert_metadata ORDER BY updated_at DESC`,
+    [],
+    (err, rows) => {
+      if (err) {
+        console.error('[GET /api/alerts/metadata] DB error:', err);
+        return res.status(500).json({ error: err.message });
+      }
+
+      // Parse tags JSON back to array for each row
+      const processed = (rows || []).map(row => {
+        if (row.tags) {
+          try {
+            row.tags = JSON.parse(row.tags);
+          } catch (e) {
+            row.tags = [];
+          }
+        }
+        return row;
+      });
+
+      res.json(processed);
     }
   );
 });

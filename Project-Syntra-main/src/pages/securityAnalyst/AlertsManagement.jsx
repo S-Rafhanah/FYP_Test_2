@@ -123,7 +123,7 @@ export default function AlertsManagement() {
     classification: "",
     status: "",
     tags: [],
-    triageLevel: "",
+    severity: "",
     notes: "",
   });
   const [archiveModal, setArchiveModal] = useState({
@@ -381,24 +381,39 @@ export default function AlertsManagement() {
 
   // Open Update Modal
   const handleOpenUpdateModal = (alert) => {
+    // Convert numeric severity to text for the dropdown
+    let severityText = "Medium";
+    if (alert.severity === 1 || alert.severity === "critical") severityText = "Critical";
+    else if (alert.severity === 2 || alert.severity === "high") severityText = "High";
+    else if (alert.severity === 3 || alert.severity === "medium") severityText = "Medium";
+    else if (alert.triageLevel) severityText = alert.triageLevel; // Fallback to triageLevel if exists
+
     setUpdateModal({
       isOpen: true,
       alert,
       classification: alert.classification || "Unclassified",
       status: alert.status || "New",
       tags: alert.tags || [],
-      triageLevel: alert.triageLevel || "Medium",
+      severity: severityText,
       notes: alert.notes || "",
     });
   };
 
   // Update Alert
   const handleUpdateAlert = async () => {
+    // Convert severity text to numeric for storage
+    let severityNumeric = 3; // Default to 3 (Low)
+    if (updateModal.severity === "Critical") severityNumeric = 1;
+    else if (updateModal.severity === "High") severityNumeric = 2;
+    else if (updateModal.severity === "Medium") severityNumeric = 3;
+    else if (updateModal.severity === "Low") severityNumeric = 3;
+
     const metadata = {
       classification: updateModal.classification,
       status: updateModal.status,
       tags: updateModal.tags,
-      triageLevel: updateModal.triageLevel,
+      severity: severityNumeric,
+      triageLevel: updateModal.severity, // Also save as triageLevel for backwards compatibility
       notes: updateModal.notes,
     };
 
@@ -435,7 +450,8 @@ export default function AlertsManagement() {
               classification: updateModal.classification,
               status: updateModal.status,
               tags: updateModal.tags,
-              triageLevel: updateModal.triageLevel,
+              severity: severityNumeric,
+              triageLevel: updateModal.severity,
               notes: updateModal.notes,
             }
           : a
@@ -1049,11 +1065,11 @@ export default function AlertsManagement() {
               </FormControl>
 
               <FormControl>
-                <FormLabel>Triage Level</FormLabel>
+                <FormLabel>Severity</FormLabel>
                 <Select
-                  value={updateModal.triageLevel}
+                  value={updateModal.severity}
                   onChange={(e) =>
-                    setUpdateModal({ ...updateModal, triageLevel: e.target.value })
+                    setUpdateModal({ ...updateModal, severity: e.target.value })
                   }
                 >
                   <option value="Low">Low</option>

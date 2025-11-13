@@ -33,7 +33,7 @@ import {
   FiCheckCircle,
   FiClock,
 } from "react-icons/fi";
-import { getSystemHealth, getIDSHealth, getRecentUsers, getUsers } from "../../backend_api";
+import { getSystemHealth, getComponentHealth, getRecentUsers, getUsers } from "../../backend_api";
 import { useAuth } from "../../auth/AuthContext";
 
 // Stat Card Component
@@ -118,7 +118,7 @@ export default function DashboardHome() {
       setLoading(true);
       const [health, ids, users] = await Promise.all([
         getSystemHealth().catch(() => ({ status: "unknown", uptime: 0 })),
-        getIDSHealth().catch(() => ({ suricata: "unknown", zeek: "unknown" })),
+        getComponentHealth().catch(() => ({ suricata: "unknown", zeek: "unknown", database: "unknown" })),
         getUsers().catch(() => []),
       ]);
 
@@ -304,27 +304,27 @@ export default function DashboardHome() {
               />
             </Box>
 
-            {/* Elasticsearch Status */}
+            {/* SQLite Database Status */}
             <Box>
               <Flex justify="space-between" align="center" mb={2}>
                 <HStack>
                   <Icon
-                    as={systemHealth?.elasticsearch === "online" ? FiCheckCircle : FiAlertCircle}
-                    color={systemHealth?.elasticsearch === "online" ? "green.500" : "gray.400"}
+                    as={idsHealth?.database === "online" ? FiCheckCircle : FiAlertCircle}
+                    color={idsHealth?.database === "online" ? "green.500" : "red.400"}
                   />
-                  <Text fontWeight="medium">Elasticsearch</Text>
+                  <Text fontWeight="medium">SQLite Database</Text>
                 </HStack>
                 <Badge
-                  colorScheme={systemHealth?.elasticsearch === "online" ? "green" : "gray"}
+                  colorScheme={idsHealth?.database === "online" ? "green" : "red"}
                   fontSize="xs"
                 >
-                  {systemHealth?.elasticsearch || "UNKNOWN"}
+                  {idsHealth?.database || "UNKNOWN"}
                 </Badge>
               </Flex>
               <Progress
-                value={systemHealth?.elasticsearch === "online" ? 100 : 0}
+                value={idsHealth?.database === "online" ? 100 : 0}
                 size="sm"
-                colorScheme="green"
+                colorScheme={idsHealth?.database === "online" ? "green" : "red"}
                 borderRadius="full"
               />
             </Box>

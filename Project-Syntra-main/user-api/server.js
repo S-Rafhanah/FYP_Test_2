@@ -857,10 +857,11 @@ app.get(
           "event.severity",
           "log.level",
           "suricata.eve.severity",
-          "source.ip",
-          "source.port",
-          "destination.ip",
-          "destination.port",
+          "src_ip",
+          "src_port",
+          "dest_ip",
+          "dest_port",
+          "proto",
           "network.protocol",
         ],
       });
@@ -922,8 +923,11 @@ app.get(
           "@timestamp",
           "zeek.event",
           "zeek.service",
-          "source.ip", "source.port",
-          "destination.ip", "destination.port",
+          "src_ip",
+          "src_port",
+          "dest_ip",
+          "dest_port",
+          "proto",
           "network.transport"
         ],
       });
@@ -971,16 +975,17 @@ app.get(
               { match: { "event.dataset": "zeek.connection" } }
             ],
             filter: [
-              { exists: { field: "source.ip" } }
+              { exists: { field: "src_ip" } }
             ]
           }
         },
         _source: [
           "@timestamp",
-          "source.ip",
-          "source.port",
-          "destination.ip",
-          "destination.port",
+          "src_ip",
+          "src_port",
+          "dest_ip",
+          "dest_port",
+          "proto",
           "network.transport",
           "network.bytes",
           "network.packets",

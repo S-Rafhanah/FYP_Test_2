@@ -838,7 +838,8 @@ app.get(
   authorize(["Platform Administrator", "Security Analyst", "Network Administrator"]),
   async (req, res) => {
     try {
-      const limit = Math.max(1, Math.min(200, Number(req.query.limit || 20)));
+      const limit = Math.max(1, Math.min(200, Number(req.query.limit || 200)));
+
       const result = await es.search({
         index: ["filebeat-*", ".ds-filebeat-*"],
         size: limit,
@@ -846,56 +847,39 @@ app.get(
         track_total_hits: false,
         query: {
           bool: {
-            must: [{ match: { "event.module": "suricata" } }],
-            filter: [{ exists: { field: "suricata.eve.alert.signature" } }],
-          },
+            must: [
+              { term: { "event_type.keyword": "alert" } }  // ✅ CORRECT filter
+            ]
+          }
         },
         _source: [
           "@timestamp",
-          "suricata.eve.alert.signature",
-          "suricata.eve.alert.severity",
-          "event.severity",
-          "log.level",
-          "suricata.eve.severity",
-          "source.ip",
-          "source.port",
-          "destination.ip",
-          "destination.port",
-          "network.protocol",
+          "event_type",
+          "alert.signature",
+          "alert.severity",
+          "alert.category",
+          "src_ip",
+          "src_port",
+          "dest_ip",
+          "dest_port",
+          "proto",
         ],
       });
 
-      const alerts = result.hits.hits.map((h) => {
-        // Try multiple possible locations for severity field
-        // Common locations in Elasticsearch/Filebeat/Suricata logs:
-        // 1. suricata.eve.alert.severity (most common)
-        // 2. event.severity (ECS standard)
-        // 3. suricata.eve.severity (alternative)
-        // 4. log.level (fallback)
-        let severity = h._source?.suricata?.eve?.alert?.severity ||
-                       h._source?.event?.severity ||
-                       h._source?.suricata?.eve?.severity ||
-                       h._source?.log?.level;
+      console.log(`[Suricata Alerts] Retrieved ${result.hits.hits.length} alerts`);
 
-        // If severity is still undefined, check if we can derive it from signature
-        // Many Suricata rules don't have severity set, so we'll default to 2 (Medium)
-        if (!severity) {
-          severity = 2;
-          console.log("[Suricata] No severity found for alert:", h._id, "signature:", h._source?.suricata?.eve?.alert?.signature);
-        }
-
-        return {
-          id: h._id,
-          timestamp: h._source?.["@timestamp"],
-          signature: h._source?.suricata?.eve?.alert?.signature,
-          severity: severity,
-          src_ip: h._source?.source?.ip,
-          src_port: h._source?.source?.port,
-          dest_ip: h._source?.destination?.ip,
-          dest_port: h._source?.destination?.port,
-          protocol: h._source?.network?.protocol,
-        };
-      });
+      const alerts = result.hits.hits.map((h) => ({
+        id: h._id,
+        timestamp: h._source?.["@timestamp"],
+        signature: h._source?.alert?.signature || "Unknown",
+        severity: h._source?.alert?.severity || 2,
+        category: h._source?.alert?.category || "Unknown",
+        src_ip: h._source?.src_ip || "N/A",
+        src_port: h._source?.src_port || "N/A",
+        dest_ip: h._source?.dest_ip || "N/A",
+        dest_port: h._source?.dest_port || "N/A",
+        protocol: h._source?.proto || "Unknown",
+      }));
 
       res.json(alerts);
     } catch (err) {
@@ -911,33 +895,44 @@ app.get(
   authorize(["Platform Administrator", "Security Analyst", "Network Administrator"]),
   async (req, res) => {
     try {
-      const limit = Math.max(1, Math.min(200, Number(req.query.limit || 20)));
+      const limit = Math.max(1, Math.min(200, Number(req.query.limit || 200)));
+
       const result = await es.search({
         index: ["filebeat-*", ".ds-filebeat-*"],
         size: limit,
         sort: [{ "@timestamp": { order: "desc" } }],
         track_total_hits: false,
-        query: { match: { "event.module": "zeek" } },
+        query: {
+          bool: {
+            must: [
+              { term: { "event_type.keyword": "flow" } }  // ✅ CORRECT filter
+            ]
+          }
+        },
         _source: [
           "@timestamp",
-          "zeek.event",
-          "zeek.service",
-          "source.ip", "source.port",
-          "destination.ip", "destination.port",
-          "network.transport"
+          "event_type",
+          "app_proto",
+          "src_ip",
+          "src_port",
+          "dest_ip",
+          "dest_port",
+          "proto",
         ],
       });
+
+      console.log(`[Zeek Logs] Retrieved ${result.hits.hits.length} logs`);
 
       const logs = result.hits.hits.map((h) => ({
         id: h._id,
         timestamp: h._source?.["@timestamp"],
-        event_type: h._source?.zeek?.event,
-        service: h._source?.zeek?.service,
-        src_ip: h._source?.source?.ip,
-        src_port: h._source?.source?.port,
-        dest_ip: h._source?.destination?.ip,
-        dest_port: h._source?.destination?.port,
-        proto: h._source?.network?.transport,
+        event_type: h._source?.event_type || "flow",
+        service: h._source?.app_proto || "Unknown",
+        src_ip: h._source?.src_ip || "N/A",
+        src_port: h._source?.src_port || "N/A",
+        dest_ip: h._source?.dest_ip || "N/A",
+        dest_port: h._source?.dest_port || "N/A",
+        proto: h._source?.proto || "Unknown",
       }));
 
       res.json(logs);
